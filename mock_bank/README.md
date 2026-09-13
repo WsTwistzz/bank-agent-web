@@ -149,6 +149,16 @@ POST /debits/D1001/cancel
 
 默认测试用户：Alice（`U1`/`A1001`）、Bob（`U2`/`A1002`）、Tujing He（`U3`/`A1003`）和 Ke Wei（`U4`/`A1004`）。Agent 使用按用户查询接口，避免跨用户读取资源。
 
+创建一组用于语音识别的中文姓名账户，并加入 `U4` 的收款人列表：
+
+```bash
+uv run python -m mock_bank.manage seed-voice-tests \
+  --owner U4 --owner-balance 500000 --balance 100000
+```
+
+命令使用固定 ID，重复执行会更新而不会重复创建。`U4` 的测试余额设为 ¥500,000，每个收款
+账户设为 ¥100,000。测试姓名包括张伟/张薇、王芳/王方、李娜/李楠和陈晨/陈辰。
+
 运行测试：
 
 ```bash

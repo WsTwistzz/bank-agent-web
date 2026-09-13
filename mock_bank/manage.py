@@ -1,5 +1,6 @@
 import argparse
 import getpass
+from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
 try:
@@ -17,6 +18,61 @@ def find_user(bank, identity):
         ).fetchone()
 
 
+VOICE_TEST_USERS = (
+    ("VU1001", "VA1001", "VP1001", "张伟", "13910001001"),
+    ("VU1002", "VA1002", "VP1002", "张薇", "13910001002"),
+    ("VU1003", "VA1003", "VP1003", "王芳", "13910001003"),
+    ("VU1004", "VA1004", "VP1004", "王方", "13910001004"),
+    ("VU1005", "VA1005", "VP1005", "李娜", "13910001005"),
+    ("VU1006", "VA1006", "VP1006", "李楠", "13910001006"),
+    ("VU1007", "VA1007", "VP1007", "陈晨", "13910001007"),
+    ("VU1008", "VA1008", "VP1008", "陈辰", "13910001008"),
+)
+
+
+def _amount_to_cents(value, name):
+    try:
+        cents = int(Decimal(value) * 100)
+    except (InvalidOperation, ValueError) as error:
+        raise ValueError(f"{name} must be a valid amount") from error
+    if cents <= 0:
+        raise ValueError(f"{name} must be positive")
+    return cents
+
+
+def seed_voice_test_users(bank, owner_user_id, balance, owner_balance="500000.00"):
+    balance_cents = _amount_to_cents(balance, "balance")
+    owner_balance_cents = _amount_to_cents(owner_balance, "owner balance")
+    with bank.connect() as db:
+        if not db.execute("SELECT 1 FROM users WHERE id = ?", (owner_user_id,)).fetchone():
+            raise ValueError("payee owner user not found")
+        db.execute(
+            "UPDATE accounts SET balance_cents = ?, status = 'active' WHERE user_id = ?",
+            (owner_balance_cents, owner_user_id),
+        )
+        for user_id, account_id, payee_id, name, phone in VOICE_TEST_USERS:
+            db.execute(
+                "INSERT INTO users (id, name, phone) VALUES (?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET name=excluded.name, phone=excluded.phone",
+                (user_id, name, phone),
+            )
+            db.execute(
+                "INSERT INTO accounts (id, user_id, name, balance_cents, status) "
+                "VALUES (?, ?, ?, ?, 'active') ON CONFLICT(id) DO UPDATE SET "
+                "user_id=excluded.user_id, name=excluded.name, "
+                "balance_cents=excluded.balance_cents, status='active'",
+                (account_id, user_id, f"{name}测试账户", balance_cents),
+            )
+            db.execute(
+                "INSERT INTO payees (id, owner_user_id, name, phone, account_id, alias) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+                "owner_user_id=excluded.owner_user_id, name=excluded.name, "
+                "phone=excluded.phone, account_id=excluded.account_id, alias=excluded.alias",
+                (payee_id, owner_user_id, name, phone, account_id, "语音测试"),
+            )
+    return [(name, account_id, balance_cents) for _, account_id, _, name, _ in VOICE_TEST_USERS]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Manage mock bank test users")
     parser.add_argument("--db", default=str(DEFAULT_DB))
@@ -27,6 +83,10 @@ def main():
     show_totp = subparsers.add_parser("show-totp")
     show_totp.add_argument("user")
     subparsers.add_parser("list-users")
+    voice_users = subparsers.add_parser("seed-voice-tests")
+    voice_users.add_argument("--owner", default="U4", help="user who sees these payees")
+    voice_users.add_argument("--balance", default="100000.00")
+    voice_users.add_argument("--owner-balance", default="500000.00")
     args = parser.parse_args()
     bank = Bank(args.db)
 
@@ -35,6 +95,17 @@ def main():
             rows = db.execute("SELECT id, name, phone FROM users ORDER BY id").fetchall()
         for row in rows:
             print(f'{row["id"]}\t{row["name"]}\t{row["phone"]}')
+        return
+
+    if args.command == "seed-voice-tests":
+        try:
+            rows = seed_voice_test_users(
+                bank, args.owner, args.balance, args.owner_balance,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        for name, account_id, balance_cents in rows:
+            print(f"{name}\t{account_id}\t¥{Decimal(balance_cents) / 100:.2f}")
         return
 
     user = find_user(bank, args.user)
