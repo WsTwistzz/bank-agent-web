@@ -80,7 +80,7 @@ class OTPVerifier:
             raise
         return {"action_id": action_id, "expires_at": expires_at.isoformat()}
 
-    def verify(self, user_id, action_id, credential):
+    def verify(self, user_id, action_id, credential, session_id=None):
         with self.connect() as db:
             challenge = db.execute(
                 "SELECT * FROM otp_challenges WHERE action_id = ? AND user_id = ?",

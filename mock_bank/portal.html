@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mock Bank</title>
+<style>
+  body{font:16px system-ui;margin:0;background:#f5f7fa;color:#172033}main{max-width:760px;margin:60px auto;padding:24px}
+  section{background:white;padding:24px;border-radius:12px;box-shadow:0 3px 18px #0001;margin-bottom:18px}input,button{font:inherit;padding:10px;margin:5px 0;width:100%;box-sizing:border-box}button{cursor:pointer;background:#1769e0;color:white;border:0;border-radius:7px}.account{border-top:1px solid #ddd;padding:14px 0}.error{color:#b42318}small{color:#667085}
+</style>
+<main>
+  <section id="login">
+    <h1>Mock Bank 登录</h1>
+    <input id="phone" placeholder="手机号" autocomplete="username">
+    <input id="password" type="password" placeholder="密码" autocomplete="current-password">
+    <input id="code" inputmode="numeric" placeholder="2FA 动态码（关闭时可留空）" autocomplete="one-time-code">
+    <button onclick="login()">登录</button><p id="error" class="error"></p>
+    <p><button class="secondary" onclick="showRegister()">注册新账户</button></p>
+  </section>
+  <section id="register" hidden>
+    <h1>注册 Mock Bank</h1>
+    <input id="registerName" placeholder="姓名">
+    <input id="registerPhone" placeholder="手机号" autocomplete="username">
+    <input id="registerPassword" type="password" placeholder="密码（至少 8 位）" autocomplete="new-password">
+    <select id="accountType" onchange="toggleEnterprise()">
+      <option value="personal">个人账户</option>
+      <option value="business">企业账户</option>
+    </select>
+    <div id="enterpriseFields" hidden>
+      <input id="enterpriseName" placeholder="企业名称">
+      <input id="registrationNumber" placeholder="统一社会信用代码（测试值即可）">
+    </div>
+    <button onclick="registerAccount()">创建账户</button>
+    <button class="secondary" onclick="showLogin()">返回登录</button>
+    <p id="registerError" class="error"></p>
+    <div id="enrollment"></div>
+  </section>
+  <section id="dashboard" hidden>
+    <button style="width:auto;float:right" onclick="logout()">退出</button>
+    <h1 id="welcome"></h1><div id="accounts"></div>
+    <h2>企业</h2><div id="enterprises"></div>
+    <h2>小微贷款产品</h2><div id="loans"></div>
+    <h2>理财产品</h2><div id="investments"></div>
+    <h2>组合投资</h2><div id="portfolios"></div>
+  </section>
+</main>
+<script>
+async function request(path, options={}) { const r=await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}}); if(!r.ok) throw new Error((await r.json()).detail||'请求失败'); return r.status===204?null:r.json() }
+async function load(){try{const [me,accounts,company,loanProducts,products,models]=await Promise.all([request('/api/me'),request('/api/accounts'),request('/api/enterprises'),request('/api/loan-products'),request('/api/investment-products'),request('/api/portfolio-models')]);login.hidden=true;register.hidden=true;dashboard.hidden=false;welcome.textContent=`你好，${me.name}`;document.querySelector('#accounts').innerHTML=accounts.map(a=>`<div class="account"><b>${a.id}</b> · ${a.name}<br>余额：¥${a.balance}　状态：${a.status}<p><button onclick="showTransactions('${a.id}',this)">查看流水</button></p></div>`).join('');enterprises.innerHTML=company.length?company.map(e=>`<p>${e.name} · ${e.role}</p>`).join(''):'<small>暂无关联企业</small>';loans.innerHTML=loanProducts.map(p=>`<p><b>${p.name}</b> · 年利率 ${p.annual_rate} · 最高 ¥${p.maximum_amount}<br><small>${p.purpose}；${p.repayment_method}</small></p>`).join('');investments.innerHTML=products.map(p=>`<p><b>${p.name}</b> · ${p.product_type} · ${p.risk_level}<br><small>预期区间 ${p.expected_return_min} ～ ${p.expected_return_max}，最低 ¥${p.minimum_amount}</small></p>`).join('');portfolios.innerHTML=models.length?models.map(m=>`<p><b>${m.name}</b> · ${m.risk_level}<br><small>${m.description}</small></p>`).join(''):'<small>完成风险测评后显示适配组合</small>'}catch{login.hidden=false;register.hidden=true;dashboard.hidden=true}}
+async function login(){error.textContent='';try{await request('/auth/login',{method:'POST',body:JSON.stringify({phone:phone.value,password:password.value,code:code.value||null})});await load()}catch(e){error.textContent=e.message}}
+async function logout(){await request('/auth/logout',{method:'POST'});location.reload()}
+async function showTransactions(id,button){try{const rows=await request(`/api/accounts/${id}/transactions`);button.parentElement.innerHTML=rows.length?rows.map(t=>`<small>${t.created_at}　${t.kind}　¥${t.amount}　${t.note||''}</small>`).join('<br>'):'<small>暂无流水</small>'}catch(e){alert(e.message)}}
+function showRegister(){login.hidden=true;register.hidden=false}function showLogin(){register.hidden=true;login.hidden=false}function toggleEnterprise(){enterpriseFields.hidden=accountType.value!=='business'}
+async function registerAccount(){registerError.textContent='';enrollment.innerHTML='';try{const result=await request('/auth/register',{method:'POST',body:JSON.stringify({name:registerName.value,phone:registerPhone.value,password:registerPassword.value,account_type:accountType.value,enterprise_name:enterpriseName.value||null,registration_number:registrationNumber.value||null})});enrollment.innerHTML=`<p><b>账户创建成功：${result.account_id}</b></p><p>请立即把下面的密钥或 URI 导入 Authenticator，离开后不再显示：</p><small>${result.totp_secret}</small><textarea readonly style="width:100%;height:80px">${result.authenticator_uri}</textarea><p>配置完成后返回登录。</p>`}catch(e){registerError.textContent=e.message}}
+load()
+</script>
+</html>

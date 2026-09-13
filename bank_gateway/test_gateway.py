@@ -1,14 +1,13 @@
-import sys
 import tempfile
 import threading
 import unittest
+import json
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parents[1] / "mock_bank"))
-
-from app import Bank, Handler
-from gateway import BankGateway, GatewayError
+from bank_gateway import BankGateway, GatewayError
+from bank_agent.trace import TraceLogger
+from mock_bank.app import Bank, Handler
 
 
 class BankGatewayTest(unittest.TestCase):
@@ -32,6 +31,20 @@ class BankGatewayTest(unittest.TestCase):
         database = Path(self.temp_dir.name) / f"{self._testMethodName}.db"
         Handler.bank = Bank(database)
         Handler.api_token = None
+
+    def test_records_api_call_metadata(self):
+        log_path = Path(self.temp_dir.name) / f"{self._testMethodName}.jsonl"
+        host, port = self.server.server_address
+        gateway = BankGateway(
+            f"http://{host}:{port}", audit_log=TraceLogger(log_path)
+        )
+        gateway.get_balance("A1001")
+        record = json.loads(log_path.read_text())
+        self.assertEqual("bank_api_call", record["event"])
+        self.assertEqual("GET", record["details"]["method"])
+        self.assertEqual("/accounts/A1001", record["details"]["path"])
+        self.assertEqual("succeeded", record["details"]["outcome"])
+        self.assertEqual(200, record["details"]["status"])
 
     def test_get_balance_is_normalized(self):
         result = self.gateway.get_balance("A1001")

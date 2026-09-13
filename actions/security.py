@@ -68,12 +68,16 @@ class ActionService:
         verifier=None,
         context_provider=None,
         max_verification_failures=3,
+        authorization_log=None,
+        risk_log=None,
     ):
         self.policy = policy
         self.db_path = str(db_path)
         self.verifier = verifier
         self.context_provider = context_provider or (lambda action_type, user_id, payload: {})
         self.max_verification_failures = max_verification_failures
+        self.authorization_log = authorization_log
+        self.risk_log = risk_log
         self.executors = {}
         self.validators = {}
         self.setup()
@@ -175,6 +179,11 @@ class ActionService:
             raise ActionError(f"no executor for {action_type}")
         if not isinstance(payload, dict):
             raise ActionError("payload must be an object")
+        if idempotency_key is not None:
+            if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+                raise ActionError("idempotency_key must be a non-empty string")
+            if len(idempotency_key) > 200:
+                raise ActionError("idempotency_key is too long")
         if action_type in self.validators:
             self.validators[action_type](payload)
 
@@ -196,12 +205,18 @@ class ActionService:
             if not session_id:
                 raise ActionError("session_id is required for protected actions")
             if self.get_pending_action(user_id, session_id):
+                if idempotency_key:
+                    existing = self.find_by_idempotency(
+                        user_id, action_type, idempotency_key
+                    )
+                    if existing:
+                        return existing
                 raise ActionError("session already has a pending action")
         created_at = utc_now()
         action_id = "ACT" + uuid.uuid4().hex[:12].upper()
         with self.connect() as db:
-            db.execute(
-                "INSERT INTO actions "
+            inserted = db.execute(
+                "INSERT OR IGNORE INTO actions "
                 "(id, user_id, session_id, action_type, payload, risk_level, status, "
                 "idempotency_key, created_at, expires_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -217,7 +232,20 @@ class ActionService:
                     created_at.isoformat(),
                     (created_at + timedelta(seconds=expires_in_seconds)).isoformat(),
                 ),
-            )
+            ).rowcount
+        if not inserted:
+            if idempotency_key:
+                existing = self.find_by_idempotency(
+                    user_id, action_type, idempotency_key
+                )
+                if existing:
+                    return existing
+            raise ActionError("conflicting pending action")
+        self._log(
+            self.risk_log, "risk_decision", user_id, session_id,
+            action_id=action_id, action_type=action_type, payload=payload,
+            context=context, risk_level=risk_level.value, decision=status.value,
+        )
         self.audit(action_id, "CREATED", {"risk_level": risk_level.value, "status": status.value})
         if risk_level == RiskLevel.GREEN:
             return self._execute(action_id)
@@ -283,6 +311,11 @@ class ActionService:
         if not changed:
             raise ActionError("action status changed before confirmation")
         self.audit(action_id, "CONFIRMED", {})
+        self._log(
+            self.authorization_log, "user_confirmed", user_id, action["session_id"],
+            action_id=action_id, action_type=action["action_type"],
+            confirmation_type="explicit_confirmation", outcome="accepted",
+        )
         return self._execute(action_id)
 
     def verify(self, action_id, user_id, credential):
@@ -295,7 +328,9 @@ class ActionService:
         if not self.verifier or not hasattr(self.verifier, "verify"):
             raise ActionError("strong verifier is not configured")
 
-        if not self.verifier.verify(user_id, action_id, credential):
+        if not self.verifier.verify(
+            user_id, action_id, credential, session_id=action["session_id"]
+        ):
             failures = action["verification_failures"] + 1
             status = (
                 ActionStatus.BLOCKED
@@ -308,6 +343,12 @@ class ActionService:
                     (failures, status.value, action_id),
                 )
             self.audit(action_id, "VERIFICATION_FAILED", {"failures": failures})
+            self._log(
+                self.authorization_log, "strong_auth_failed", user_id,
+                action["session_id"], action_id=action_id,
+                action_type=action["action_type"], failures=failures,
+                outcome=status.value,
+            )
             raise VerificationError("strong verification failed")
 
         with self.connect() as db:
@@ -324,6 +365,11 @@ class ActionService:
         if not changed:
             raise ActionError("action status changed before verification")
         self.audit(action_id, "VERIFIED", {})
+        self._log(
+            self.authorization_log, "strong_auth_verified", user_id,
+            action["session_id"], action_id=action_id,
+            action_type=action["action_type"], outcome="accepted",
+        )
         return self._execute(action_id)
 
     def request_verification(self, action_id, user_id):
@@ -336,7 +382,14 @@ class ActionService:
         if not self.verifier or not hasattr(self.verifier, "issue"):
             raise ActionError("strong verifier is not configured")
         challenge = self.verifier.issue(user_id, action_id)
+        if hasattr(self.verifier, "requirements"):
+            challenge.update(self.verifier.requirements(user_id, action["session_id"]))
         self.audit(action_id, "VERIFICATION_ISSUED", {"expires_at": challenge["expires_at"]})
+        self._log(
+            self.authorization_log, "strong_auth_requested", user_id,
+            action["session_id"], action_id=action_id,
+            action_type=action["action_type"], expires_at=challenge["expires_at"],
+        )
         return challenge
 
     def reject(self, action_id, user_id):
@@ -354,6 +407,11 @@ class ActionService:
         if not changed:
             raise ActionError("action status changed before rejection")
         self.audit(action_id, "REJECTED", {})
+        self._log(
+            self.authorization_log, "user_rejected", user_id, action["session_id"],
+            action_id=action_id, action_type=action["action_type"],
+            confirmation_type="explicit_confirmation", outcome="rejected",
+        )
         return self.get_action(action_id)
 
     def get_action(self, action_id):
@@ -438,7 +496,18 @@ class ActionService:
                 (status.value, utc_now().isoformat(), result_json, error, action_id),
             )
         self.audit(action_id, status.value, {"error": error} if error else {})
+        self._log(
+            self.risk_log, "action_execution", action["user_id"],
+            action["session_id"], action_id=action_id,
+            action_type=action["action_type"], risk_level=action["risk_level"],
+            outcome=status.value, error=error,
+        )
         return self.get_action(action_id)
+
+    @staticmethod
+    def _log(logger, event, user_id, session_id, **details):
+        if logger:
+            logger.write(event, user_id, session_id, **details)
 
     @staticmethod
     def action_json(row):

@@ -21,7 +21,9 @@ def require_amount(payload):
         raise ValueError("amount must be positive with at most 2 decimal places")
 
 
-def create_bank_action_service(gateway, db_path, verifier):
+def create_bank_action_service(
+    gateway, db_path, verifier, authorization_log=None, risk_log=None,
+):
     def owns_account(user_id, account_id):
         accounts = gateway.get_accounts(user_id)["accounts"]
         if not any(account["id"] == account_id for account in accounts):
@@ -87,6 +89,8 @@ def create_bank_action_service(gateway, db_path, verifier):
         db_path=db_path,
         verifier=verifier,
         context_provider=security_context,
+        authorization_log=authorization_log,
+        risk_log=risk_log,
     )
 
     def execute_transfer(payload):

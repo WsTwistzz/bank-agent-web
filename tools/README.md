@@ -4,6 +4,10 @@ Tool 为 Agent 提供结构化银行能力。只读 Tool 调用 Bank Gateway；�
 
 `registry.py` 保存 Agent 可见的 Tool 名称、说明和 JSON Schema。`user_id` 与 `session_id` 不在 Schema 中，由可信运行时注入。
 
+Registry 还保存不暴露给模型修改的工具元数据。`registry.metadata()` 会明确返回每个工具的
+`access`（`read` 或 `write`）和 `user_scoped`；编排器使用该元数据实施专家白名单和并行
+只读策略，不依赖工具名称猜测权限。
+
 所有 Tool 统一返回：
 
 ```json
@@ -82,7 +86,58 @@ result = registry.call(
 )
 ```
 
+写工具还必须收到可信运行时生成的 `request_id`。Registry 会结合请求、用户、会话、工具名
+和规范化业务参数生成稳定幂等键；`request_id` 和幂等键均不出现在模型工具 Schema 中：
+
+```python
+result = registry.call(
+    "request_transfer",
+    {"source_account_id": "A1001", "target_account_id": "A1002", "amount": "100.00"},
+    user_id="U1",
+    session_id=session_id,
+    request_id="REQ-generated-by-trusted-runtime",
+)
+```
+
 Registry 会拒绝未知 Tool、缺失字段、多余字段和错误参数类型。确认、强验证和拒绝不是 Agent Tool，由对话运行时根据当前会话处理。
+
+## 新增 Tool 模板
+
+Tool 使用 `ReadTool` 和 `ActionTool` 两个可复用模板。一般不需要再写新的 Tool class，只需声明 Schema 和对应的 `BankingTools` 方法：
+
+```python
+from tools import ActionTool, ReadTool
+
+balance = ReadTool(
+    banking_tools=banking_tools,
+    name="get_balance",
+    description="查询指定账户余额",
+    method="get_balance",
+    properties={"account_id": {"type": "string"}},
+    required=["account_id"],
+)
+
+scheduled_transfer = ActionTool(
+    banking_tools=banking_tools,
+    name="request_schedule_transfer",
+    description="申请定时转账",
+    method="request_schedule_transfer",
+    properties={
+        "source_account_id": {"type": "string"},
+        "target_account_id": {"type": "string"},
+        "amount": {"type": "string"},
+        "execute_at": {"type": "string"},
+    },
+    required=[
+        "source_account_id",
+        "target_account_id",
+        "amount",
+        "execute_at",
+    ],
+)
+```
+
+`ReadTool` 自动注入可信 `user_id`；`ActionTool` 自动注入可信 `user_id` 和 `session_id`。模型只能提交 `properties` 中的业务参数。修改类方法仍必须在 `BankingTools` 内进入 `ActionService`，不能直接调用 Gateway 写接口。
 
 红色操作的运行时流程：
 

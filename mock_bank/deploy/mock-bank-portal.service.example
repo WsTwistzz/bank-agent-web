@@ -1,0 +1,19 @@
+[Unit]
+Description=Mock Bank user portal
+After=network.target
+
+[Service]
+Type=simple
+User=REPLACE_WITH_LINUX_USER
+WorkingDirectory=/REPLACE/WITH/ABSOLUTE/PATH/bank-agent
+Environment=MOCK_BANK_2FA_ENABLED=true
+Environment=MOCK_BANK_SECURE_COOKIE=true
+ExecStart=/REPLACE/WITH/ABSOLUTE/PATH/bank-agent/.venv/bin/python -m mock_bank.portal
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/REPLACE/WITH/ABSOLUTE/PATH/bank-agent/mock_bank
+
+[Install]
+WantedBy=multi-user.target

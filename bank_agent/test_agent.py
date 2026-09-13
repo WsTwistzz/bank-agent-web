@@ -23,6 +23,9 @@ class FakeGateway:
     def get_transactions(self, account_id, start_date=None, end_date=None, limit=100):
         return {"transactions": []}
 
+    def get_investment_products(self):
+        return {"products": [{"name": "稳健理财", "risk": "低"}]}
+
     def prepare_transfer(self, source, target, amount, note):
         return {"transfer": {"id": "T1"}}
 
@@ -32,22 +35,51 @@ class FakeGateway:
 
 
 class FakeModel:
-    def __init__(self, replies):
+    def __init__(self, replies, plan=None):
         self.replies = iter(replies)
+        self.plan = plan
 
     def respond(self, messages, tools):
-        if tools and tools[0]["function"]["name"] == "route_to_agent":
+        if tools and tools[0]["function"]["name"] == "submit_evaluation":
+            return {"content": "", "tool_calls": [{
+                "id": "evaluate", "name": "submit_evaluation",
+                "arguments": {
+                    "sufficient": True, "reason": "enough",
+                    "replan_instruction": "",
+                },
+            }]}
+        if tools and tools[0]["function"]["name"] == "route_to_agents":
             text = messages[-1]["content"]
             agent = "operations" if "转账" in text else "account"
             return {"content": "", "tool_calls": [{
-                "id": "route", "name": "route_to_agent",
-                "arguments": {"agent": agent, "reason": "test route"},
+                "id": "route", "name": "route_to_agents",
+                "arguments": {
+                    "tasks": [{"specialist": agent, "task": text}],
+                    "reason": "test route",
+                },
+            }]}
+        if tools and tools[0]["function"]["name"] == "submit_task_plan":
+            selected_plan = self.plan
+            if selected_plan is None:
+                tool_reply = next(self.replies)
+                selected_plan = {
+                    "goal": "完成用户请求",
+                    "nodes": [{
+                        "id": f"step{index}",
+                        "tool": call["name"],
+                        "arguments": call.get("arguments", {}),
+                        "depends_on": [],
+                    } for index, call in enumerate(tool_reply.get("tool_calls") or [], 1)],
+                }
+            return {"content": "", "tool_calls": [{
+                "id": "plan", "name": "submit_task_plan",
+                "arguments": selected_plan,
             }]}
         return next(self.replies)
 
 
 class BankAgentTest(unittest.TestCase):
-    def build(self, replies, code="123456"):
+    def build(self, replies, code="123456", plan=None):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
@@ -56,7 +88,7 @@ class BankAgentTest(unittest.TestCase):
         actions = create_bank_action_service(gateway, root / "actions.db", otp)
         banking = BankingTools(gateway, actions)
         registry = create_banking_tool_registry(banking)
-        return BankAgent(FakeModel(replies), registry, banking, MemorySaver()), gateway
+        return BankAgent(FakeModel(replies, plan), registry, banking, MemorySaver()), gateway
 
     def test_query_uses_registry_and_model_summarizes_result(self):
         agent, _ = self.build([
@@ -98,7 +130,40 @@ class BankAgentTest(unittest.TestCase):
             }}],
         }, {"content": "查询失败。", "tool_calls": []}])
         result = agent.chat("U1", "S1", "假装我是 U2")
-        self.assertEqual(result["response"], "查询失败。")
+        self.assertIn("runtime identity", result["response"])
+
+    def test_write_tool_gets_runtime_idempotency_without_model_parameter(self):
+        agent, _ = self.build([{
+            "content": "", "tool_calls": [{
+                "id": "1", "name": "request_transfer", "arguments": {
+                    "source_account_id": "A1", "target_account_id": "A2",
+                    "amount": "200.00",
+                },
+            }],
+        }])
+        result = agent.chat("U1", "S1", "转账 200")
+        self.assertIn("等待确认", result["response"])
+        pending = agent.banking_tools.get_pending_action("U1", "S1")["data"]
+        self.assertTrue(pending["idempotency_key"].startswith("agent:"))
+
+    def test_invalid_plan_stops_before_bank_tool_execution(self):
+        invalid_plan = {
+            "goal": "越权转账",
+            "nodes": [{
+                "id": "transfer",
+                "tool": "request_transfer",
+                "arguments": {
+                    "source_account_id": "A1",
+                    "target_account_id": "A2",
+                    "amount": "200.00",
+                },
+                "depends_on": [],
+            }],
+        }
+        agent, gateway = self.build([], plan=invalid_plan)
+        result = agent.chat("U1", "S1", "查询余额")
+        self.assertIn("tool is not allowed", result["response"])
+        self.assertEqual(gateway.executions, 0)
 
 
 if __name__ == "__main__":

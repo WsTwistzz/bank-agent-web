@@ -1,4 +1,5 @@
 import json
+from time import monotonic
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -11,12 +12,17 @@ class GatewayError(Exception):
 
 
 class BankGateway:
-    def __init__(self, base_url="http://127.0.0.1:8000", timeout=5, api_token=None):
+    def __init__(
+        self, base_url="http://127.0.0.1:8000", timeout=5, api_token=None,
+        audit_log=None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.api_token = api_token
+        self.audit_log = audit_log
 
     def request(self, method, path, data=None):
+        started = monotonic()
         body = json.dumps(data).encode() if data is not None else None
         headers = {"Content-Type": "application/json"}
         if self.api_token:
@@ -29,17 +35,33 @@ class BankGateway:
         )
         try:
             with urlopen(request, timeout=self.timeout) as response:
-                return json.load(response)
+                result = json.load(response)
+                self._audit_request(
+                    method, path, data, "succeeded", started,
+                    status=getattr(response, "status", None),
+                )
+                return result
         except HTTPError as error:
             try:
                 message = json.load(error).get("error", str(error))
             except (json.JSONDecodeError, AttributeError):
                 message = str(error)
+            self._audit_request(method, path, data, "failed", started, status=error.code, error=message)
             raise GatewayError(message, error.code) from error
         except URLError as error:
+            self._audit_request(method, path, data, "failed", started, error=str(error.reason))
             raise GatewayError(f"bank unavailable: {error.reason}") from error
         except json.JSONDecodeError as error:
+            self._audit_request(method, path, data, "failed", started, error="invalid JSON")
             raise GatewayError("bank returned invalid JSON") from error
+
+    def _audit_request(self, method, path, data, outcome, started, **details):
+        if self.audit_log:
+            self.audit_log.write(
+                "bank_api_call", None, None, method=method, path=path,
+                request_body=data, outcome=outcome,
+                duration_ms=round((monotonic() - started) * 1000, 2), **details,
+            )
 
     def get_account(self, account_id):
         return self.request("GET", f"/accounts/{quote(account_id, safe='')}")

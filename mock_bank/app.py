@@ -90,7 +90,10 @@ class Bank:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL
+                    name TEXT NOT NULL,
+                    phone TEXT UNIQUE,
+                    password_hash TEXT,
+                    totp_secret TEXT
                 );
                 CREATE TABLE IF NOT EXISTS accounts (
                     id TEXT PRIMARY KEY,
@@ -165,7 +168,7 @@ class Bank:
                 );
             """)
             db.executemany(
-                "INSERT OR IGNORE INTO users VALUES (?, ?)",
+                "INSERT OR IGNORE INTO users (id, name) VALUES (?, ?)",
                 [
                     ("U1", "Alice"),
                     ("U2", "Bob"),
@@ -173,6 +176,28 @@ class Bank:
                     ("U4", "Ke Wei"),
                 ],
             )
+            user_columns = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
+            for name, definition in {
+                "phone": "TEXT",
+                "password_hash": "TEXT",
+                "totp_secret": "TEXT",
+            }.items():
+                if name not in user_columns:
+                    db.execute(f"ALTER TABLE users ADD COLUMN {name} {definition}")
+            db.executemany(
+                "UPDATE users SET phone = COALESCE(phone, ?) WHERE id = ?",
+                [
+                    ("13800000001", "U1"),
+                    ("13800000000", "U2"),
+                    ("13800000003", "U3"),
+                    ("13800000004", "U4"),
+                ],
+            )
+            db.execute(
+                "UPDATE users SET phone = '13800000000' "
+                "WHERE id = 'U2' AND phone = '13800000002'"
+            )
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users(phone)")
             account_columns = {row["name"] for row in db.execute("PRAGMA table_info(accounts)")}
             if "user_id" not in account_columns:
                 db.execute("ALTER TABLE accounts ADD COLUMN user_id TEXT NOT NULL DEFAULT 'U1'")
@@ -228,7 +253,9 @@ class Bank:
                 "('P1001', 'U1', 'Bob', '13800000000', 'A1002', '小明')"
             )
             db.executemany(
-                "INSERT OR IGNORE INTO investment_products VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO investment_products "
+                "(id, name, risk_level, annual_rate, minimum_cents) "
+                "VALUES (?, ?, ?, ?, ?)",
                 [
                     ("I1001", "稳健理财", "LOW", "0.0250", 10000),
                     ("I1002", "成长理财", "MEDIUM", "0.0450", 50000),
@@ -654,6 +681,25 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.bank.transfer_record(parts[1])
             elif parts == ["investments", "products"]:
                 result = self.bank.investment_products()
+            elif parts == ["loan-products"]:
+                result = self.bank.loan_products()
+            elif len(parts) == 3 and parts[0] == "users" and parts[2] == "enterprises":
+                result = self.bank.enterprises(parts[1])
+            elif len(parts) == 4 and parts[0] == "users" and parts[2] == "loan-applications":
+                result = self.bank.loan_application(parts[1], parts[3])
+            elif len(parts) == 4 and parts[0] == "users" and parts[2] == "loans":
+                result = self.bank.loan(parts[1], parts[3])
+            elif len(parts) == 3 and parts[0] == "users" and parts[2] == "risk-profile":
+                result = self.bank.risk_profile(parts[1])
+            elif len(parts) == 4 and parts[0] == "users" and parts[2:] == ["investments", "recommendations"]:
+                result = self.bank.recommended_investments(
+                    parts[1], query.get("available_amount", ["1000.00"])[0]
+                )
+            elif parts == ["portfolio-models"]:
+                user_id = query.get("user_id", [None])[0]
+                result = self.bank.portfolio_models(user_id)
+            elif len(parts) == 4 and parts[0] == "users" and parts[2] == "portfolios":
+                result = self.bank.portfolio(parts[1], parts[3])
             else:
                 return self.send_json(404, {"error": "route not found"})
             self.send_json(200, result)
@@ -688,6 +734,28 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.bank.redeem(parts[1], data.get("product"), data.get("amount"))
             elif len(parts) == 3 and parts[0] == "debits" and parts[2] == "cancel":
                 result = self.bank.cancel_debit(parts[1])
+            elif len(parts) == 3 and parts[0] == "users" and parts[2] == "loan-applications":
+                result = self.bank.create_loan_application(
+                    parts[1], data.get("enterprise_id"), data.get("product_id"),
+                    data.get("account_id"), data.get("amount"), data.get("term_months"),
+                    data.get("purpose", ""),
+                )
+            elif len(parts) == 5 and parts[0] == "users" and parts[2] == "loan-applications" and parts[4] == "submit":
+                result = self.bank.submit_loan_application(parts[1], parts[3])
+            elif len(parts) == 5 and parts[0] == "users" and parts[2] == "loan-applications" and parts[4] == "draw":
+                result = self.bank.draw_loan(parts[1], parts[3])
+            elif len(parts) == 5 and parts[0] == "users" and parts[2] == "loans" and parts[4] == "repay":
+                result = self.bank.repay_loan(parts[1], parts[3], data.get("amount"))
+            elif len(parts) == 3 and parts[0] == "users" and parts[2] == "risk-profile":
+                result = self.bank.set_risk_profile(
+                    parts[1], data.get("risk_level"), data.get("investment_horizon_months"),
+                    data.get("liquidity_need"), data.get("loss_tolerance"),
+                )
+            elif len(parts) == 3 and parts[0] == "users" and parts[2] == "portfolios":
+                result = self.bank.buy_portfolio(
+                    parts[1], data.get("account_id"), data.get("model_id"),
+                    data.get("amount"), data.get("name"),
+                )
             else:
                 return self.send_json(404, {"error": "route not found"})
             self.send_json(200, result)
@@ -725,7 +793,11 @@ def main():
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "localhost", "::1"} and not args.api_token:
         parser.error("--api-token or BANK_API_TOKEN is required for non-localhost binding")
-    Handler.bank = Bank(args.db)
+    try:
+        from .extended import BankPlatform
+    except ImportError:
+        from extended import BankPlatform
+    Handler.bank = BankPlatform(args.db)
     Handler.api_token = args.api_token
     print(f"Mock bank listening on http://{args.host}:{args.port}")
     ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()

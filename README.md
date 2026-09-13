@@ -68,6 +68,19 @@ uv run python -m bank_agent.cli
 
 `.env` 只保存在本机且已被 Git 忽略；`.env.example` 不包含真实密钥，可以安全提交。
 
-CLI 支持上下方向键翻看输入历史、左右方向键编辑。运行轨迹保存在 `bank_agent/logs/agent.jsonl`。
+CLI 支持上下方向键翻看输入历史、左右方向键编辑。运行审计按 Agent 操作、用户授权、风控与接口调用三类保存在 `bank_agent/logs/`，详见 [`bank_agent/README.md`](bank_agent/README.md)。
+
+设置 `AGENT_MODE=expert` 可启用跨领域多专家并行处理；`standard` 模式每次只运行一个专家。
+并行模式只开放查询工具，所有银行修改操作继续走单专家确认和强验证流程。
 
 Mock Bank 启动后，可在 `http://127.0.0.1:8000/admin` 查看所有测试用户和账户。共享服务器的安全配置见 [`mock_bank/README.md`](mock_bank/README.md)。
+
+需要测试不同用户登录时，先设置用户密码，再启动 FastAPI 门户：
+
+```bash
+uv run python -m mock_bank.manage set-password U4
+uv run python -m mock_bank.manage show-totp U4
+uv run python -m mock_bank.portal
+```
+
+然后打开 `http://127.0.0.1:8080`。完整说明见 [`mock_bank/README.md`](mock_bank/README.md)。

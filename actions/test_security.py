@@ -1,15 +1,19 @@
 import tempfile
+import threading
 import unittest
+import json
 from pathlib import Path
 
-from security import (
+from bank_agent.trace import TraceLogger
+
+from actions import (
     ActionError,
     ActionService,
+    OTPVerifier,
     PermissionPolicy,
     RiskLevel,
     VerificationError,
 )
-from otp import OTPVerifier
 
 
 class ActionServiceTest(unittest.TestCase):
@@ -28,6 +32,8 @@ class ActionServiceTest(unittest.TestCase):
             Path(self.temp_dir.name) / "actions.db",
             verifier=verifier,
             context_provider=lambda action_type, user_id, payload: {"daily_total": 600},
+            authorization_log=TraceLogger(Path(self.temp_dir.name) / "authorization.jsonl"),
+            risk_log=TraceLogger(Path(self.temp_dir.name) / "risk.jsonl"),
         )
         self.session_id = self.service.create_session("U1", "S1")["session_id"]
 
@@ -60,6 +66,11 @@ class ActionServiceTest(unittest.TestCase):
         self.assertEqual(1, len(self.executions))
         with self.assertRaises(ActionError):
             self.service.confirm(action["action_id"], "U1")
+        events = [
+            json.loads(line)["event"]
+            for line in (Path(self.temp_dir.name) / "authorization.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(["user_confirmed"], events)
 
     def test_red_action_requires_strong_verification(self):
         self.register("INVEST", RiskLevel.RED)
@@ -103,6 +114,12 @@ class ActionServiceTest(unittest.TestCase):
         )
         self.assertEqual("YELLOW", small["risk_level"])
         self.assertEqual("RED", large["risk_level"])
+        decisions = [
+            json.loads(line)["details"]["risk_level"]
+            for line in (Path(self.temp_dir.name) / "risk.jsonl").read_text().splitlines()
+            if json.loads(line)["event"] == "risk_decision"
+        ]
+        self.assertEqual(["YELLOW", "RED"], decisions)
 
     def test_idempotency_key_returns_same_action(self):
         self.register("READ", RiskLevel.GREEN)
@@ -110,6 +127,39 @@ class ActionServiceTest(unittest.TestCase):
         second = self.service.submit("READ", {}, "U1", idempotency_key="request-1")
         self.assertEqual(first["action_id"], second["action_id"])
         self.assertEqual(1, len(self.executions))
+
+    def test_concurrent_idempotent_submissions_execute_once(self):
+        barrier = threading.Barrier(2)
+        lock = threading.Lock()
+        executions = []
+
+        def risk(payload, context):
+            barrier.wait(timeout=2)
+            return RiskLevel.GREEN
+
+        def execute(payload):
+            with lock:
+                executions.append(payload)
+            return {"ok": True}
+
+        self.policy.register("ONCE", risk)
+        self.service.register("ONCE", execute)
+        results = []
+
+        def submit():
+            results.append(self.service.submit(
+                "ONCE", {"value": 1}, "U1", idempotency_key="same-request"
+            ))
+
+        threads = [threading.Thread(target=submit) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+
+        self.assertEqual(2, len(results))
+        self.assertEqual(1, len({item["action_id"] for item in results}))
+        self.assertEqual(1, len(executions))
 
     def test_action_and_audit_survive_restart(self):
         self.register("READ", RiskLevel.GREEN)

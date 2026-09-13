@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from otp import OTPVerifier
+from actions import OTPVerifier
 
 
 class OTPVerifierTest(unittest.TestCase):

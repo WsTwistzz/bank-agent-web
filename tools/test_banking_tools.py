@@ -7,11 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "mock_bank"))
 
-from app import Bank, Handler
 from actions import OTPVerifier
 from bank_gateway import BankGateway
+from mock_bank.app import Bank, Handler
 from tools import BankingTools, create_bank_action_service, create_banking_tool_registry
 
 
@@ -70,6 +69,19 @@ class BankingToolsTest(unittest.TestCase):
         confirmed = self.tools.confirm_pending_action("U1", "S1")["data"]
         self.assertEqual("SUCCEEDED", confirmed["status"])
         self.assertEqual("900.00", self.tools.get_balance("U1", "A1001")["data"]["balance"])
+
+    def test_transfer_risk_uses_1000_daily_total_boundary(self):
+        payload = {"amount": "1000.00"}
+        policy = self.tools.actions.policy
+        self.assertEqual(
+            "YELLOW",
+            policy.evaluate("TRANSFER", payload, {"daily_transfer_total": 0}).value,
+        )
+        payload["amount"] = "1000.01"
+        self.assertEqual(
+            "RED",
+            policy.evaluate("TRANSFER", payload, {"daily_transfer_total": 0}).value,
+        )
 
     def test_red_investment_requires_strong_verification(self):
         requested = self.tools.request_purchase_investment(
@@ -134,6 +146,36 @@ class BankingToolsTest(unittest.TestCase):
         )
         self.assertFalse(invalid["success"])
         self.assertIn("unknown fields", invalid["error"])
+
+    def test_registry_exposes_explicit_access_metadata(self):
+        metadata = {item["name"]: item for item in self.registry.metadata()}
+        self.assertEqual("read", metadata["get_balance"]["access"])
+        self.assertEqual("write", metadata["request_transfer"]["access"])
+        self.assertFalse(metadata["get_investment_products"]["user_scoped"])
+        self.assertTrue(self.registry.is_write("request_transfer"))
+        self.assertFalse(self.registry.is_write("get_balance"))
+
+    def test_registry_generates_stable_write_idempotency_key_per_request(self):
+        arguments = {
+            "source_account_id": "A1001",
+            "target_account_id": "A1002",
+            "amount": "100.00",
+        }
+        first = self.registry.call(
+            "request_transfer", arguments, "U1", "S1", request_id="REQ1"
+        )
+        second = self.registry.call(
+            "request_transfer", arguments, "U1", "S1", request_id="REQ1"
+        )
+        self.assertTrue(first["success"])
+        self.assertEqual(first["data"]["action_id"], second["data"]["action_id"])
+        self.assertTrue(first["data"]["idempotency_key"].startswith("agent:"))
+
+        missing_request = self.registry.call(
+            "request_transfer", arguments, "U1", "S2"
+        )
+        self.assertFalse(missing_request["success"])
+        self.assertIn("trusted request_id", missing_request["error"])
 
 
 if __name__ == "__main__":

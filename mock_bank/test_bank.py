@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app import Bank
+from mock_bank.app import Bank
 
 
 class BankTest(unittest.TestCase):

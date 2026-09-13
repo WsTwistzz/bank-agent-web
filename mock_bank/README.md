@@ -22,6 +22,44 @@ curl http://127.0.0.1:8000/accounts/A1001
 
 首次启动会创建 `bank.db` 和四个测试用户。重启服务会继续使用原数据库。
 
+## 用户登录门户
+
+先给测试用户设置密码：
+
+```bash
+uv run python -m mock_bank.manage list-users
+uv run python -m mock_bank.manage set-password U4
+```
+
+查看该用户的 2FA 密钥、当前 6 位动态码和 Authenticator 导入地址：
+
+```bash
+uv run python -m mock_bank.manage show-totp U4
+```
+
+启动 FastAPI 用户门户：
+
+```bash
+uv run python -m mock_bank.portal
+```
+
+打开 `http://127.0.0.1:8080`，使用手机号、密码和动态码登录。登录后只能查看该用户自己的账户和流水。测试手机号为：
+
+```text
+Alice      13800000001  A1001
+Bob        13800000000  A1002
+Tujing He  13800000003  A1003
+Ke Wei     13800000004  A1004
+```
+
+默认启用 2FA。仅在本地调试时可以关闭：
+
+```bash
+MOCK_BANK_2FA_ENABLED=false uv run python -m mock_bank.portal
+```
+
+`show-totp` 是测试环境的管理员命令，不应暴露给普通用户或放进公开网页。手机端可将它输出的 `Authenticator URI` 导入 Google Authenticator、Microsoft Authenticator、1Password 等兼容 TOTP 的应用。
+
 ## 账户面板
 
 启动后打开 `http://127.0.0.1:8000/admin`，可以查看所有测试用户，以及每个用户的账户、余额和状态。刷新页面即可看到转账后的最新余额。
@@ -48,6 +86,18 @@ BANK_USER_ID=U3
 服务器前面必须使用 Nginx 或 Caddy 提供 HTTPS，并通过防火墙限制访问。未设置 Token 时，Mock Bank 会拒绝绑定非本机地址。
 
 当前 `BANK_USER_ID` 仍由测试者选择，共享 Token 也不是正式用户登录。因此只能用于可信人员测试，不能存放真实银行数据或向公众开放。
+
+对外测试时，建议只公开 FastAPI 门户的 `8080` 端口，并把内部银行 API 的 `8000` 端口限制为服务器本机访问。反向代理负责 HTTPS，然后设置：
+
+```bash
+export MOCK_BANK_2FA_ENABLED=true
+export MOCK_BANK_SECURE_COOKIE=true
+uv run python -m mock_bank.portal --host 0.0.0.0
+```
+
+FastAPI 提供登录和会话能力，但生产级部署仍需补充限流、密码重置、审计、CSRF 防护和密钥托管。此门户只用于不含真实数据的比赛测试环境。
+
+Linux 服务器上的 systemd 与 Caddy 示例见 [`deploy/README.md`](deploy/README.md)。实际发布还需要服务器地址、域名和 SSH 登录方式。
 
 ## API
 
