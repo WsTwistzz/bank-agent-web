@@ -74,21 +74,37 @@ def pcm_to_wav(pcm, sample_rate=16_000):
 
 
 class OpenAICompatibleASR:
-    def __init__(self, base_url, model, api_key="EMPTY", timeout=60):
+    def __init__(self, base_url, model, api_key="", timeout=60, client=None):
         self.url = base_url.rstrip("/") + "/audio/transcriptions"
         self.model = model
         self.api_key = api_key
         self.timeout = timeout
+        self.client = client
 
     async def transcribe(self, pcm, sample_rate=16_000):
+        if not self.api_key:
+            raise RuntimeError("VOICE_ASR_API_KEY 未配置")
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        files = {"file": ("speech.wav", pcm_to_wav(pcm, sample_rate), "audio/wav")}
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                self.url, headers=headers, data={"model": self.model}, files=files,
-            )
-            response.raise_for_status()
+        files = {
+            "file": ("speech.wav", pcm_to_wav(pcm, sample_rate), "audio/wav"),
+            "model": (None, self.model),
+        }
+        owns_client = self.client is None
+        client = self.client or httpx.AsyncClient(timeout=self.timeout)
+        try:
+            response = await client.post(self.url, headers=headers, files=files)
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as error:
+                trace_id = response.headers.get("x-siliconcloud-trace-id")
+                suffix = f"，trace_id={trace_id}" if trace_id else ""
+                raise RuntimeError(
+                    f"ASR 服务请求失败（HTTP {response.status_code}{suffix}）"
+                ) from error
             payload = response.json()
+        finally:
+            if owns_client:
+                await client.aclose()
         text = payload.get("text")
         if text is None and payload.get("choices"):
             text = payload["choices"][0].get("message", {}).get("content")

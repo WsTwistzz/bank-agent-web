@@ -149,8 +149,19 @@ WebRTC 发送麦克风音轨；服务端转为 16 kHz PCM，经静音分段后�
 uv sync --extra voice
 ```
 
-配置 `.env` 中的 `VOICE_ASR_BASE_URL`、`VOICE_ASR_MODEL` 和可选密钥。Qwen3-ASR 的
-OpenAI-compatible transcription 服务示例：
+默认接入 SiliconFlow。把 API Key 写入本地 `.env`：
+
+```bash
+VOICE_ASR_BASE_URL=https://api.siliconflow.cn/v1
+VOICE_ASR_API_KEY=你的_SiliconFlow_API_Key
+VOICE_ASR_MODEL=FunAudioLLM/SenseVoiceSmall
+```
+
+也可以使用 `SILICONFLOW_API_KEY` 变量，或把模型改为 `TeleAI/TeleSpeechASR`。密钥只由服务端
+读取，不会发送到浏览器。
+
+如果希望改回自建 Qwen3-ASR，则把 `VOICE_ASR_BASE_URL` 指向本地服务，模型改为
+`Qwen/Qwen3-ASR-1.7B`。OpenAI-compatible transcription 服务示例：
 
 ```bash
 qwen-asr-serve Qwen/Qwen3-ASR-1.7B \

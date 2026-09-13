@@ -51,9 +51,9 @@ def create_app(runtime=None, asr=None):
     owned_runtime = runtime is None
     runtime_holder = {"value": runtime}
     asr = asr or OpenAICompatibleASR(
-        os.environ.get("VOICE_ASR_BASE_URL", "http://127.0.0.1:8094/v1"),
-        os.environ.get("VOICE_ASR_MODEL", "Qwen/Qwen3-ASR-1.7B"),
-        os.environ.get("VOICE_ASR_API_KEY", "EMPTY"),
+        os.environ.get("VOICE_ASR_BASE_URL", "https://api.siliconflow.cn/v1"),
+        os.environ.get("VOICE_ASR_MODEL", "FunAudioLLM/SenseVoiceSmall"),
+        os.environ.get("VOICE_ASR_API_KEY") or os.environ.get("SILICONFLOW_API_KEY", ""),
     )
     audio_config = VoiceAudioConfig(
         silence_ms=int(os.environ.get("VOICE_SILENCE_MS", "700")),
@@ -85,7 +85,7 @@ def create_app(runtime=None, asr=None):
     @app.get("/health")
     def health():
         return {"status": "ok", "webrtc": RTCPeerConnection is not None,
-                "asr_model": asr.model}
+                "asr_model": asr.model, "asr_configured": bool(asr.api_key)}
 
     @app.post("/voice/offer")
     async def offer(data: Offer):

@@ -1,7 +1,11 @@
 import struct
 import unittest
 
-from bank_agent.voice_audio import VoiceAudioConfig, VoiceTurnDetector, pcm_to_wav
+import httpx
+
+from bank_agent.voice_audio import (
+    OpenAICompatibleASR, VoiceAudioConfig, VoiceTurnDetector, pcm_to_wav,
+)
 
 
 def frame(value, milliseconds=100, rate=16_000):
@@ -31,3 +35,32 @@ class VoiceTurnDetectorTest(unittest.TestCase):
 
     def test_pcm_to_wav_has_riff_header(self):
         self.assertTrue(pcm_to_wav(frame(42)).startswith(b"RIFF"))
+
+
+class ASRClientTest(unittest.IsolatedAsyncioTestCase):
+    async def test_sends_siliconflow_compatible_multipart_request(self):
+        async def handler(request):
+            self.assertEqual(request.url.path, "/v1/audio/transcriptions")
+            self.assertEqual(request.headers["authorization"], "Bearer secret")
+            body = await request.aread()
+            self.assertIn(b'form-data; name="file"; filename="speech.wav"', body)
+            self.assertIn(b'form-data; name="model"', body)
+            self.assertIn(b"FunAudioLLM/SenseVoiceSmall", body)
+            return httpx.Response(200, json={"text": "查询余额"})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            asr = OpenAICompatibleASR(
+                "https://api.siliconflow.cn/v1", "FunAudioLLM/SenseVoiceSmall",
+                "secret", client=client,
+            )
+            self.assertEqual(await asr.transcribe(frame(1000)), "查询余额")
+        finally:
+            await client.aclose()
+
+    async def test_requires_api_key(self):
+        asr = OpenAICompatibleASR(
+            "https://api.siliconflow.cn/v1", "FunAudioLLM/SenseVoiceSmall",
+        )
+        with self.assertRaisesRegex(RuntimeError, "VOICE_ASR_API_KEY"):
+            await asr.transcribe(frame(1000))
