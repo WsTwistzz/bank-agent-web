@@ -135,3 +135,36 @@ CLI 将审计记录按用途追加到 `bank_agent/logs/` 下的三份 JSONL 文�
 - 待确认 Action 输入和运行错误
 
 OTP、password、token、credential 等敏感字段会自动遮盖。日志不会记录模型不可见的内部思维链；“思考”仅指模型显式输出的计划、路由理由和决策摘要。`actions.db` 仍是 Action 状态和授权审计的持久化事实源，JSONL 用于检索与排障。
+
+## WebRTC 语音原型
+
+语音入口保留现有 Supervisor、Planner、BankingTools、Action、OTP 和审计逻辑。浏览器通过
+WebRTC 发送麦克风音轨；服务端转为 16 kHz PCM，经静音分段后调用兼容 OpenAI
+`/audio/transcriptions` 的 ASR 服务。最终文本才会提交给 Bank Agent，增量识别文本不会触发
+银行操作。回复文本目前使用浏览器 SpeechSynthesis 播放，便于先验证交互效果。
+
+安装语音依赖：
+
+```bash
+uv sync --extra voice
+```
+
+配置 `.env` 中的 `VOICE_ASR_BASE_URL`、`VOICE_ASR_MODEL` 和可选密钥。Qwen3-ASR 的
+OpenAI-compatible transcription 服务示例：
+
+```bash
+qwen-asr-serve Qwen/Qwen3-ASR-1.7B \
+  --host 127.0.0.1 --port 8094 --gpu-memory-utilization 0.8
+```
+
+依次启动 Mock Bank 和语音服务：
+
+```bash
+uv run python mock_bank/app.py
+uv run --extra voice python -m bank_agent.voice_server
+```
+
+打开 `http://127.0.0.1:8090`，点击“开始语音”并允许麦克风权限。默认按 700ms 静音判定
+一轮结束；可通过 `VOICE_SILENCE_MS`、`VOICE_MIN_SPEECH_MS` 和
+`VOICE_RMS_THRESHOLD` 调整。该原型仅默认绑定 localhost，尚未包含公网 TURN、登录态绑定
+和服务端流式 TTS，不应直接作为生产银行入口部署。

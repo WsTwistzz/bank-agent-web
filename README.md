@@ -70,6 +70,8 @@ uv run python -m bank_agent.cli
 
 CLI 支持上下方向键翻看输入历史、左右方向键编辑。运行审计按 Agent 操作、用户授权、风控与接口调用三类保存在 `bank_agent/logs/`，详见 [`bank_agent/README.md`](bank_agent/README.md)。
 
+WebRTC 语音测试入口和 Qwen3-ASR 配置见 [`bank_agent/README.md`](bank_agent/README.md#webrtc-语音原型)。
+
 设置 `AGENT_MODE=expert` 可启用跨领域多专家并行处理；`standard` 模式每次只运行一个专家。
 并行模式只开放查询工具，所有银行修改操作继续走单专家确认和强验证流程。
 
