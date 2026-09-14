@@ -72,9 +72,6 @@ def _fast_voice_response(runtime, user_id, session_id, text):
 
     if not re.search(r"转账|转给|转到", normalized):
         return None
-    amount = _chinese_amount(normalized)
-    if amount is None:
-        return None
     payee_match = re.search(r"给(.+?)(?:转账|转给|转到)", normalized)
     if not payee_match:
         return None
@@ -86,6 +83,9 @@ def _fast_voice_response(runtime, user_id, session_id, text):
     if len(payees["data"]) != 1 or not accounts["data"]:
         return None
     payee = payees["data"][0]
+    amount = _chinese_amount(normalized)
+    if amount is None:
+        return f"可以给{payee['name']}转账。请告诉我具体转账金额。"
     source = next((item for item in accounts["data"] if item.get("status") == "active"), None)
     if not source:
         return "当前没有可用的转出账户。"
