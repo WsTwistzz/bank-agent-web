@@ -29,6 +29,11 @@ VOICE_TEST_USERS = (
     ("VU1008", "VA1008", "VP1008", "陈辰", "13910001008"),
 )
 
+VOICE_EXISTING_PAYEES = (
+    ("VP2001", "Alice", "13800000001", "A1001", "Alice 爱丽丝 艾丽丝"),
+    ("VP2002", "Bob", "13800000000", "A1002", "Bob 鲍勃 波波"),
+)
+
 
 def _amount_to_cents(value, name):
     try:
@@ -69,6 +74,16 @@ def seed_voice_test_users(bank, owner_user_id, balance, owner_balance="500000.00
                 "owner_user_id=excluded.owner_user_id, name=excluded.name, "
                 "phone=excluded.phone, account_id=excluded.account_id, alias=excluded.alias",
                 (payee_id, owner_user_id, name, phone, account_id, "语音测试"),
+            )
+        for payee_id, name, phone, account_id, alias in VOICE_EXISTING_PAYEES:
+            if not db.execute("SELECT 1 FROM accounts WHERE id = ?", (account_id,)).fetchone():
+                continue
+            db.execute(
+                "INSERT INTO payees (id, owner_user_id, name, phone, account_id, alias) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+                "owner_user_id=excluded.owner_user_id, name=excluded.name, "
+                "phone=excluded.phone, account_id=excluded.account_id, alias=excluded.alias",
+                (payee_id, owner_user_id, name, phone, account_id, alias),
             )
     return [(name, account_id, balance_cents) for _, account_id, _, name, _ in VOICE_TEST_USERS]
 

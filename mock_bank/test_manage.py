@@ -2,7 +2,9 @@ import tempfile
 import unittest
 
 from mock_bank.app import Bank
-from mock_bank.manage import VOICE_TEST_USERS, seed_voice_test_users
+from mock_bank.manage import (
+    VOICE_EXISTING_PAYEES, VOICE_TEST_USERS, seed_voice_test_users,
+)
 
 
 class VoiceTestFixturesTest(unittest.TestCase):
@@ -26,7 +28,11 @@ class VoiceTestFixturesTest(unittest.TestCase):
             ).fetchone()["total"]
             payees = db.execute(
                 "SELECT COUNT(*) AS total FROM payees WHERE owner_user_id = 'U4' "
-                "AND id LIKE 'VP%'"
+                "AND id LIKE 'VP1%'"
+            ).fetchone()["total"]
+            english_payees = db.execute(
+                "SELECT COUNT(*) AS total FROM payees WHERE owner_user_id = 'U4' "
+                "AND id LIKE 'VP2%'"
             ).fetchone()["total"]
             owner_balance = db.execute(
                 "SELECT balance_cents FROM accounts WHERE id = 'A1004'"
@@ -34,6 +40,7 @@ class VoiceTestFixturesTest(unittest.TestCase):
         self.assertEqual(len(VOICE_TEST_USERS), users)
         self.assertEqual(len(VOICE_TEST_USERS), accounts)
         self.assertEqual(len(VOICE_TEST_USERS), payees)
+        self.assertEqual(len(VOICE_EXISTING_PAYEES), english_payees)
         self.assertEqual(50000000, owner_balance)
 
 

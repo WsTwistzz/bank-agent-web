@@ -21,11 +21,12 @@ ROOT = Path(__file__).resolve().parent
 
 
 class BankAgentRuntime:
-    def __init__(self, agent, connection, logs, config):
+    def __init__(self, agent, connection, logs, config, banking_tools):
         self.agent = agent
         self.connection = connection
         self.logs = logs
         self.config = config
+        self.banking_tools = banking_tools
 
     def close(self):
         self.connection.close()
@@ -72,4 +73,4 @@ def create_runtime(otp_sender=None):
             node_timeout_seconds=agent_config.node_timeout_seconds,
         ),
     )
-    return BankAgentRuntime(agent, connection, logs, agent_config)
+    return BankAgentRuntime(agent, connection, logs, agent_config, banking_tools)

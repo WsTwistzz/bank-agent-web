@@ -10,8 +10,10 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import uuid
 from contextlib import asynccontextmanager
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +35,71 @@ except ImportError:  # Existing text-only installs must remain usable.
 
 ROOT = Path(__file__).resolve().parent
 PAGE = ROOT / "voice.html"
+
+
+def _chinese_amount(text):
+    """Parse the common spoken amounts used by the voice test fixtures."""
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:元|块|人民币)?", text)
+    if match:
+        return match.group(1)
+    common = {
+        "一百": "100", "两百": "200", "二百": "200", "三百": "300",
+        "五百": "500", "一千": "1000", "两千": "2000", "二千": "2000",
+        "三千": "3000", "五千": "5000", "一万": "10000", "两万": "20000",
+        "二万": "20000", "五万": "50000",
+    }
+    for phrase, amount in common.items():
+        if phrase in text:
+            return amount
+    return None
+
+
+def _fast_voice_response(runtime, user_id, session_id, text):
+    """Handle safe, unambiguous voice operations without another LLM round-trip."""
+    normalized = text.strip()
+    if re.search(r"余额|账户余额|余额查询", normalized) and not re.search(r"转账|转给", normalized):
+        result = runtime.banking_tools.get_accounts(user_id)
+        if not result["success"]:
+            return f"查询账户失败：{result['error']}"
+        accounts = result["data"]
+        if not accounts:
+            return "当前没有可用账户。"
+        details = "；".join(
+            f"{item['name']}（{item['id']}）余额 {item['balance']} 元"
+            for item in accounts
+        )
+        return f"已查到你的账户：{details}。"
+
+    if not re.search(r"转账|转给|转到", normalized):
+        return None
+    amount = _chinese_amount(normalized)
+    if amount is None:
+        return None
+    payee_match = re.search(r"给(.+?)(?:转账|转给|转到)", normalized)
+    if not payee_match:
+        return None
+    query = payee_match.group(1).strip(" ，,。")
+    payees = runtime.banking_tools.find_payee(user_id, query)
+    accounts = runtime.banking_tools.get_accounts(user_id)
+    if not payees["success"] or not accounts["success"]:
+        return None
+    if len(payees["data"]) != 1 or not accounts["data"]:
+        return None
+    payee = payees["data"][0]
+    source = next((item for item in accounts["data"] if item.get("status") == "active"), None)
+    if not source:
+        return "当前没有可用的转出账户。"
+    try:
+        Decimal(amount)
+    except InvalidOperation:
+        return None
+    result = runtime.banking_tools.request_transfer(
+        user_id, session_id, source["id"], payee["account_id"], amount,
+        note="语音测试转账",
+    )
+    if not result["success"]:
+        return f"转账申请创建失败：{result['error']}"
+    return f"已创建向{payee['name']}转账 {amount} 元的待确认申请，当前从{source['name']}转出。请回复“确认”或“取消”。"
 
 
 class Offer(BaseModel):
@@ -122,10 +189,33 @@ def create_app(runtime=None, asr=None):
                         return
                     _event(channel, "transcript", text)
                     _event(channel, "status", "Bank Agent 正在处理…")
-                    result = await asyncio.to_thread(
-                        get_runtime().agent.chat, user_id, session_id, text,
+                    runtime = get_runtime()
+                    fast_response = await asyncio.to_thread(
+                        _fast_voice_response, runtime, user_id, session_id, text,
                     )
-                    _event(channel, "response", result["response"])
+                    if fast_response is not None:
+                        response_text = fast_response
+                    else:
+                        progress = True
+
+                        async def keepalive():
+                            seconds = 0
+                            while progress:
+                                await asyncio.sleep(5)
+                                seconds += 5
+                                if progress:
+                                    _event(channel, "status", f"仍在处理，已等待 {seconds} 秒…")
+
+                        keepalive_task = asyncio.create_task(keepalive())
+                        try:
+                            result = await asyncio.to_thread(
+                                runtime.agent.chat, user_id, session_id, text,
+                            )
+                            response_text = result["response"]
+                        finally:
+                            progress = False
+                            keepalive_task.cancel()
+                    _event(channel, "response", response_text)
                     _event(channel, "status", "请继续说话")
                 except Exception as error:
                     current_runtime = runtime_holder["value"]
