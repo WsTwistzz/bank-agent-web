@@ -1,7 +1,8 @@
+import json
 import unittest
 from types import SimpleNamespace
 
-from bank_agent.voice_server import _fast_voice_response
+from bank_agent.voice_server import _event, _fast_voice_response
 
 
 class FakeTools:
@@ -104,6 +105,13 @@ class VoiceFastPathTest(unittest.TestCase):
             self.runtime, "U4", "S1", "选择第二位", context,
         )
         self.assertIn("向张薇转账 500 元", response)
+
+
+class VoiceEventTest(unittest.TestCase):
+    def test_capture_event_uses_enabled_field(self):
+        channel = SimpleNamespace(readyState="open", send=lambda message: setattr(channel, "message", message))
+        _event(channel, "capture", enabled=True)
+        self.assertEqual({"type": "capture", "enabled": True}, json.loads(channel.message))
 
 
 if __name__ == "__main__":

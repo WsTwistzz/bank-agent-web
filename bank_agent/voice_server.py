@@ -145,9 +145,12 @@ class Offer(BaseModel):
     type: str
 
 
-def _event(channel, event_type, text):
+def _event(channel, event_type, text=None, **payload):
     if channel.readyState == "open":
-        channel.send(json.dumps({"type": event_type, "text": text}, ensure_ascii=False))
+        event = {"type": event_type, **payload}
+        if text is not None:
+            event["text"] = text
+        channel.send(json.dumps(event, ensure_ascii=False))
 
 
 def create_app(runtime=None, asr=None):
@@ -216,14 +219,14 @@ def create_app(runtime=None, asr=None):
                 if event.get("type") != "end_utterance" or not state["capturing"]:
                     return
                 state["capturing"] = False
-                _event(channel, "capture", False)
+                _event(channel, "capture", enabled=False)
                 detector = state["detector"]
                 utterance = detector.flush() if detector else None
                 if utterance:
                     asyncio.create_task(process_utterance(utterance))
                 else:
                     state["capturing"] = True
-                    _event(channel, "capture", True)
+                    _event(channel, "capture", enabled=True)
                     _event(channel, "status", "还没有检测到有效语音，请再试一次")
 
         @pc.on("connectionstatechange")
@@ -285,7 +288,7 @@ def create_app(runtime=None, asr=None):
                     _event(channel, "error", str(error))
                 finally:
                     state["capturing"] = True
-                    _event(channel, "capture", True)
+                    _event(channel, "capture", enabled=True)
 
         @pc.on("track")
         def on_track(track):
@@ -310,7 +313,7 @@ def create_app(runtime=None, asr=None):
                                 _event(state["channel"], "status", "正在聆听…")
                             if utterance:
                                 state["capturing"] = False
-                                _event(state["channel"], "capture", False)
+                                _event(state["channel"], "capture", enabled=False)
                                 asyncio.create_task(process_utterance(utterance))
                 except Exception:
                     utterance = detector.flush()
