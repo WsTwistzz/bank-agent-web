@@ -13,8 +13,16 @@ from bank_agent.specialist import SpecialistAgent, SpecialistResult, SpecialistT
 from bank_agent.supervisor import SPECIALISTS, Supervisor
 
 
-CONFIRM_WORDS = {"确认", "确认执行", "同意", "yes", "confirm"}
+CONFIRM_WORDS = {
+    "确认", "确认执行", "我确认", "确认转账", "同意", "yes", "confirm",
+}
 REJECT_WORDS = {"取消", "拒绝", "不同意", "no", "reject"}
+SEND_CODE_WORDS = {"发送验证码", "获取验证码", "sendcode"}
+
+
+def normalize_action_reply(text):
+    """Normalize explicit action replies without guessing from similar sounds."""
+    return re.sub(r"[\s，,。.!！?？、；;：:]+", "", text.strip().lower())
 
 
 def merge_specialist_results(left, right):
@@ -158,10 +166,11 @@ class BankAgent:
         if not pending:
             return {"response": ""}
 
-        text = state["messages"][-1]["content"].strip().lower()
+        raw_text = state["messages"][-1]["content"]
+        text = normalize_action_reply(raw_text)
         self._trace(
             "pending_action_input", user_id, session_id,
-            input=text, pending_action=pending,
+            input=raw_text, normalized_input=text, pending_action=pending,
         )
         if text in REJECT_WORDS:
             return self._action_response(
@@ -175,9 +184,7 @@ class BankAgent:
             return self._action_response(
                 self.banking_tools.verify_pending_action(user_id, session_id, text)
             )
-        if pending["status"] == "WAITING_STRONG_AUTH" and text in {
-            "发送验证码", "获取验证码", "send code",
-        }:
+        if pending["status"] == "WAITING_STRONG_AUTH" and text in SEND_CODE_WORDS:
             result = self.banking_tools.request_pending_verification(user_id, session_id)
             if result["success"]:
                 return {"response": "验证码已发送，请输入 6 位验证码。"}

@@ -112,6 +112,32 @@ class BankAgentTest(unittest.TestCase):
         self.assertEqual(second["response"], "操作状态：SUCCEEDED")
         self.assertEqual(gateway.executions, 1)
 
+    def test_spoken_confirmation_accepts_punctuation(self):
+        agent, gateway = self.build([{
+            "content": "", "tool_calls": [{"id": "1", "name": "request_transfer", "arguments": {
+                "source_account_id": "A1", "target_account_id": "A2", "amount": "200.00"
+            }}],
+        }])
+        agent.chat("U1", "S1", "转账 200")
+
+        result = agent.chat("U1", "S1", "确认。")
+
+        self.assertEqual(result["response"], "操作状态：SUCCEEDED")
+        self.assertEqual(gateway.executions, 1)
+
+    def test_unclear_asr_fragment_does_not_confirm_transfer(self):
+        agent, gateway = self.build([{
+            "content": "", "tool_calls": [{"id": "1", "name": "request_transfer", "arguments": {
+                "source_account_id": "A1", "target_account_id": "A2", "amount": "200.00"
+            }}],
+        }])
+        agent.chat("U1", "S1", "转账 200")
+
+        result = agent.chat("U1", "S1", "二人")
+
+        self.assertIn("等待确认", result["response"])
+        self.assertEqual(gateway.executions, 0)
+
     def test_red_transfer_requires_issued_otp(self):
         agent, gateway = self.build([{
             "content": "", "tool_calls": [{"id": "1", "name": "request_transfer", "arguments": {
