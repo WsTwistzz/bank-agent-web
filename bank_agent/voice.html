@@ -13,8 +13,50 @@ function addTurn(kind,text){const row=document.createElement('div');row.classNam
 function speak(text){speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.rate=1.05;speechSynthesis.speak(u)}
 function handle(message){const event=JSON.parse(message.data);if(event.type==='status')statusEl.textContent=event.text;if(event.type==='transcript')addTurn('user',event.text);if(event.type==='response'){addTurn('agent',event.text);speak(event.text)}if(event.type==='error')statusEl.textContent=`错误：${event.text}`}
 function meter(s){audioContext=new AudioContext();const source=audioContext.createMediaStreamSource(s);analyser=audioContext.createAnalyser();source.connect(analyser);const values=new Uint8Array(analyser.frequencyBinCount);meterTimer=setInterval(()=>{analyser.getByteFrequencyData(values);const avg=values.reduce((a,b)=>a+b,0)/values.length;levelEl.style.width=`${Math.min(100,avg*2)}%`},80)}
-async function startVoice(){statusEl.textContent='请求麦克风权限…';stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});pc=new RTCPeerConnection();stream.getTracks().forEach(t=>pc.addTrack(t,stream));dc=pc.createDataChannel('events');dc.onmessage=handle;dc.onopen=()=>statusEl.textContent='已连接，请开始说话';dc.onclose=()=>statusEl.textContent='连接已关闭';await pc.setLocalDescription(await pc.createOffer());await new Promise(resolve=>{if(pc.iceGatheringState==='complete')resolve();else pc.addEventListener('icegatheringstatechange',()=>pc.iceGatheringState==='complete'&&resolve())});const response=await fetch('/voice/offer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,type:pc.localDescription.type})});if(!response.ok)throw new Error((await response.json()).detail||'连接失败');await pc.setRemoteDescription(await response.json());meter(stream);startButton.disabled=true;stopButton.disabled=false}
-async function stopVoice(){clearInterval(meterTimer);speechSynthesis.cancel();stream?.getTracks().forEach(t=>t.stop());pc?.close();audioContext?.close();startButton.disabled=false;stopButton.disabled=true;statusEl.textContent='已停止'}
-startButton.onclick=()=>startVoice().catch(e=>statusEl.textContent=`错误：${e.message}`);stopButton.onclick=stopVoice;
+function waitForIceGathering(peer,timeoutMs=4000){return new Promise(resolve=>{if(peer.iceGatheringState==='complete'){resolve();return}let settled=false;const finish=()=>{if(settled)return;settled=true;clearTimeout(timer);peer.removeEventListener('icegatheringstatechange',onChange);resolve()};const onChange=()=>peer.iceGatheringState==='complete'&&finish();const timer=setTimeout(finish,timeoutMs);peer.addEventListener('icegatheringstatechange',onChange)})}
+function microphoneError(error){if(error.name==='NotAllowedError')return '麦克风权限被拒绝，请在浏览器地址栏中允许麦克风后重试';if(error.name==='NotFoundError')return '未找到可用的麦克风';if(error.name==='NotReadableError')return '麦克风正被其他应用占用';return error.message||'无法访问麦克风'}
+async function cleanup(){clearInterval(meterTimer);meterTimer=undefined;speechSynthesis.cancel();stream?.getTracks().forEach(t=>t.stop());stream=undefined;dc?.close();dc=undefined;pc?.close();pc=undefined;if(audioContext&&audioContext.state!=='closed')await audioContext.close();audioContext=undefined;levelEl.style.width='0';startButton.disabled=false;stopButton.disabled=true}
+async function startVoice(){
+  startButton.disabled=true;
+  statusEl.textContent='请求麦克风权限…';
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  }catch(error){
+    throw new Error(microphoneError(error));
+  }
+  meter(stream);
+  stopButton.disabled=false;
+  statusEl.textContent='麦克风已就绪，正在建立 WebRTC 连接…';
+  pc=new RTCPeerConnection();
+  pc.onconnectionstatechange=()=>{
+    if(pc.connectionState==='connecting')statusEl.textContent='正在连接语音服务…';
+    if(pc.connectionState==='failed'||pc.connectionState==='disconnected')statusEl.textContent='连接中断，请停止后重试';
+  };
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  dc=pc.createDataChannel('events');
+  dc.onmessage=handle;
+  dc.onopen=()=>statusEl.textContent='已连接，请开始说话';
+  dc.onclose=()=>{if(pc&&pc.connectionState!=='closed')statusEl.textContent='连接已关闭'};
+  await pc.setLocalDescription(await pc.createOffer());
+  statusEl.textContent='正在收集网络连接信息…';
+  await waitForIceGathering(pc);
+  statusEl.textContent='正在连接语音服务…';
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),10000);
+  let response;
+  try{
+    response=await fetch('/voice/offer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,type:pc.localDescription.type}),signal:controller.signal});
+  }catch(error){
+    if(error.name==='AbortError')throw new Error('语音服务连接超时');
+    throw error;
+  }finally{
+    clearTimeout(timer);
+  }
+  if(!response.ok){let detail='连接失败';try{detail=(await response.json()).detail||detail}catch{}throw new Error(detail)}
+  await pc.setRemoteDescription(await response.json());
+}
+async function stopVoice(){await cleanup();statusEl.textContent='已停止'}
+startButton.onclick=()=>startVoice().catch(async error=>{await cleanup();statusEl.textContent=`错误：${error.message}`});
+stopButton.onclick=stopVoice;
 </script>
 </html>
