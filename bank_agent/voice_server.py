@@ -228,8 +228,11 @@ def create_app(runtime=None, asr=None, tts=None):
                             if state["tts_interrupted"]:
                                 break
                             for offset in range(0, len(chunk), 16_384):
+                                if state["tts_interrupted"]:
+                                    break
                                 channel.send(chunk[offset:offset + 16_384])
-                                while channel.bufferedAmount > 1_000_000:
+                                await asyncio.sleep(0)
+                                while channel.bufferedAmount > 131_072:
                                     await asyncio.sleep(0.01)
                         _event(
                             channel, "tts_end", turn_id=turn_id,
