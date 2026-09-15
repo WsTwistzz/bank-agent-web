@@ -4,62 +4,241 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Bank Agent Voice</title>
 <style>
-body{font:16px system-ui;margin:0;background:#eef3f8;color:#172033}main{max-width:760px;margin:40px auto;padding:24px}section{background:#fff;padding:24px;border-radius:16px;box-shadow:0 8px 30px #17324d18}button{font:inherit;padding:12px 18px;border:0;border-radius:9px;background:#1769e0;color:#fff;cursor:pointer;margin-right:8px}button.secondary{background:#e7edf5;color:#172033}.status{color:#52606d}.turn{padding:12px 0;border-top:1px solid #e5e7eb}.user{color:#1769e0}.agent{color:#166534}#meter{height:8px;background:#e5e7eb;border-radius:8px;overflow:hidden;margin:18px 0}#level{height:100%;width:0;background:#22c55e;transition:width .08s}</style>
-<main><section><h1>Bank Agent 语音测试</h1><p class="status" id="status">尚未连接</p><div id="meter"><div id="level"></div></div><p><button id="start">开始语音</button><button id="finish" class="secondary" disabled>暂停说话</button><button id="stop" class="secondary" disabled>停止会话</button></p><div id="turns"></div></section></main>
+body { font: 16px system-ui; margin: 0; background: #eef3f8; color: #172033; }
+main { max-width: 760px; margin: 40px auto; padding: 24px; }
+section { background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 8px 30px #17324d18; }
+button { font: inherit; padding: 12px 18px; border: 0; border-radius: 9px; background: #1769e0; color: #fff; cursor: pointer; margin-right: 8px; }
+button.secondary { background: #e7edf5; color: #172033; }
+.status { color: #52606d; }
+.turn { padding: 12px 0; border-top: 1px solid #e5e7eb; }
+.user { color: #1769e0; }
+.agent { color: #166534; }
+#meter { height: 8px; background: #e5e7eb; border-radius: 8px; overflow: hidden; margin: 18px 0; }
+#level { height: 100%; width: 0; background: #22c55e; transition: width .08s; }
+</style>
+<main>
+  <section>
+    <h1>Bank Agent 语音测试</h1>
+    <p class="status" id="status">尚未连接</p>
+    <div id="meter"><div id="level"></div></div>
+    <p>
+      <button id="start">开始语音</button>
+      <button id="finish" class="secondary" disabled>暂停说话</button>
+      <button id="stop" class="secondary" disabled>停止会话</button>
+    </p>
+    <div id="turns"></div>
+  </section>
+</main>
 <script>
-let pc, stream, dc, audioContext, analyser, meterTimer, agentSpeaking=false;
-const statusEl=document.querySelector('#status'), turns=document.querySelector('#turns'), startButton=document.querySelector('#start'), finishButton=document.querySelector('#finish'), stopButton=document.querySelector('#stop'), levelEl=document.querySelector('#level');
-function addTurn(kind,text){const row=document.createElement('div');row.className=`turn ${kind}`;row.textContent=`${kind==='user'?'你':'Agent'}：${text}`;turns.prepend(row)}
-function setMicrophoneEnabled(enabled){stream?.getAudioTracks().forEach(track=>track.enabled=enabled)}
-function speak(text){speechSynthesis.cancel();agentSpeaking=true;setMicrophoneEnabled(false);finishButton.disabled=true;statusEl.textContent='Agent 正在播报…';const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.rate=1.05;const resume=()=>{agentSpeaking=false;setMicrophoneEnabled(true);if(dc?.readyState==='open'){finishButton.disabled=false;statusEl.textContent='请继续说话'}};u.onend=resume;u.onerror=resume;speechSynthesis.speak(u)}
-function handle(message){const event=JSON.parse(message.data);if(event.type==='status'&&!agentSpeaking)statusEl.textContent=event.text;if(event.type==='capture'&&!agentSpeaking)finishButton.disabled=!event.enabled;if(event.type==='transcript')addTurn('user',event.text);if(event.type==='response'){addTurn('agent',event.text);speak(event.text)}if(event.type==='error')statusEl.textContent=`错误：${event.text}`}
-function meter(s){audioContext=new AudioContext();const source=audioContext.createMediaStreamSource(s);analyser=audioContext.createAnalyser();source.connect(analyser);const values=new Uint8Array(analyser.frequencyBinCount);meterTimer=setInterval(()=>{analyser.getByteFrequencyData(values);const avg=values.reduce((a,b)=>a+b,0)/values.length;levelEl.style.width=`${Math.min(100,avg*2)}%`},80)}
-function waitForIceGathering(peer,timeoutMs=4000){return new Promise(resolve=>{if(peer.iceGatheringState==='complete'){resolve();return}let settled=false;const finish=()=>{if(settled)return;settled=true;clearTimeout(timer);peer.removeEventListener('icegatheringstatechange',onChange);resolve()};const onChange=()=>peer.iceGatheringState==='complete'&&finish();const timer=setTimeout(finish,timeoutMs);peer.addEventListener('icegatheringstatechange',onChange)})}
-function microphoneError(error){if(error.name==='NotAllowedError')return '麦克风权限被拒绝，请在浏览器地址栏中允许麦克风后重试';if(error.name==='NotFoundError')return '未找到可用的麦克风';if(error.name==='NotReadableError')return '麦克风正被其他应用占用';return error.message||'无法访问麦克风'}
-async function cleanup(){clearInterval(meterTimer);meterTimer=undefined;agentSpeaking=false;speechSynthesis.cancel();stream?.getTracks().forEach(t=>t.stop());stream=undefined;dc?.close();dc=undefined;pc?.close();pc=undefined;if(audioContext&&audioContext.state!=='closed')await audioContext.close();audioContext=undefined;levelEl.style.width='0';startButton.disabled=false;finishButton.disabled=true;stopButton.disabled=true}
-async function startVoice(){
-  startButton.disabled=true;
-  statusEl.textContent='请求麦克风权限…';
-  try{
-    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  }catch(error){
-    throw new Error(microphoneError(error));
-  }
-  meter(stream);
-  stopButton.disabled=false;
-  statusEl.textContent='麦克风已就绪，正在建立 WebRTC 连接…';
-  pc=new RTCPeerConnection();
-  pc.onconnectionstatechange=()=>{
-    if(pc.connectionState==='connecting')statusEl.textContent='正在连接语音服务…';
-    if(pc.connectionState==='failed'||pc.connectionState==='disconnected')statusEl.textContent='连接中断，请停止后重试';
+let peerConnection;
+let audioStream;
+let dataChannel;
+let audioContext;
+let analyser;
+let meterTimer;
+let agentSpeaking = false;
+
+const statusEl = document.querySelector('#status');
+const turnsEl = document.querySelector('#turns');
+const startButton = document.querySelector('#start');
+const finishButton = document.querySelector('#finish');
+const stopButton = document.querySelector('#stop');
+const levelEl = document.querySelector('#level');
+
+function addTurn(kind, text) {
+  const row = document.createElement('div');
+  row.className = `turn ${kind}`;
+  row.textContent = `${kind === 'user' ? '你' : 'Agent'}：${text}`;
+  turnsEl.prepend(row);
+}
+
+function setMicrophoneEnabled(enabled) {
+  audioStream?.getAudioTracks().forEach(track => { track.enabled = enabled; });
+}
+
+function speak(text) {
+  speechSynthesis.cancel();
+  agentSpeaking = true;
+  setMicrophoneEnabled(false);
+  finishButton.disabled = true;
+  statusEl.textContent = 'Agent 正在播报…';
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+  utterance.rate = 1.05;
+  const resumeListening = () => {
+    agentSpeaking = false;
+    setMicrophoneEnabled(true);
+    if (dataChannel?.readyState === 'open') {
+      finishButton.disabled = false;
+      statusEl.textContent = '请继续说话';
+    }
   };
-  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
-  dc=pc.createDataChannel('events');
-  dc.onmessage=handle;
-  dc.onopen=()=>{statusEl.textContent='已连接，请开始说话';finishButton.disabled=false};
-  dc.onclose=()=>{if(pc&&pc.connectionState!=='closed')statusEl.textContent='连接已关闭'};
-  await pc.setLocalDescription(await pc.createOffer());
-  statusEl.textContent='正在收集网络连接信息…';
-  await waitForIceGathering(pc);
-  statusEl.textContent='正在连接语音服务…';
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),10000);
-  let response;
-  try{
-    response=await fetch('/voice/offer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,type:pc.localDescription.type}),signal:controller.signal});
-  }catch(error){
-    if(error.name==='AbortError')throw new Error('语音服务连接超时');
+  utterance.onend = resumeListening;
+  utterance.onerror = resumeListening;
+  speechSynthesis.speak(utterance);
+}
+
+function handleMessage(message) {
+  const event = JSON.parse(message.data);
+  if (event.type === 'status' && !agentSpeaking) statusEl.textContent = event.text;
+  if (event.type === 'capture' && !agentSpeaking) finishButton.disabled = !event.enabled;
+  if (event.type === 'transcript') addTurn('user', event.text);
+  if (event.type === 'response') {
+    addTurn('agent', event.text);
+    speak(event.text);
+  }
+  if (event.type === 'error') statusEl.textContent = `错误：${event.text}`;
+}
+
+function startMeter(stream) {
+  audioContext = new AudioContext();
+  const source = audioContext.createMediaStreamSource(stream);
+  analyser = audioContext.createAnalyser();
+  source.connect(analyser);
+  const values = new Uint8Array(analyser.frequencyBinCount);
+  meterTimer = setInterval(() => {
+    analyser.getByteFrequencyData(values);
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    levelEl.style.width = `${Math.min(100, average * 2)}%`;
+  }, 80);
+}
+
+function waitForIceGathering(connection, timeoutMs = 4000) {
+  return new Promise(resolve => {
+    if (connection.iceGatheringState === 'complete') {
+      resolve();
+      return;
+    }
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      connection.removeEventListener('icegatheringstatechange', handleStateChange);
+      resolve();
+    };
+    const handleStateChange = () => {
+      if (connection.iceGatheringState === 'complete') finish();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    connection.addEventListener('icegatheringstatechange', handleStateChange);
+  });
+}
+
+function microphoneError(error) {
+  const messages = {
+    NotAllowedError: '麦克风权限被拒绝，请在浏览器地址栏中允许麦克风后重试',
+    NotFoundError: '未找到可用的麦克风',
+    NotReadableError: '麦克风正被其他应用占用',
+  };
+  return messages[error.name] || error.message || '无法访问麦克风';
+}
+
+async function cleanup() {
+  clearInterval(meterTimer);
+  meterTimer = undefined;
+  agentSpeaking = false;
+  speechSynthesis.cancel();
+  audioStream?.getTracks().forEach(track => track.stop());
+  audioStream = undefined;
+  dataChannel?.close();
+  dataChannel = undefined;
+  peerConnection?.close();
+  peerConnection = undefined;
+  if (audioContext && audioContext.state !== 'closed') await audioContext.close();
+  audioContext = undefined;
+  levelEl.style.width = '0';
+  startButton.disabled = false;
+  finishButton.disabled = true;
+  stopButton.disabled = true;
+}
+
+async function requestVoiceAnswer() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    return await fetch('/voice/offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sdp: peerConnection.localDescription.sdp,
+        type: peerConnection.localDescription.type,
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('语音服务连接超时');
     throw error;
-  }finally{
+  } finally {
     clearTimeout(timer);
   }
-  if(!response.ok){let detail='连接失败';try{detail=(await response.json()).detail||detail}catch{}throw new Error(detail)}
-  await pc.setRemoteDescription(await response.json());
 }
-async function stopVoice(){await cleanup();statusEl.textContent='已停止'}
-function finishSpeaking(){if(!dc||dc.readyState!=='open'){statusEl.textContent='语音连接尚未就绪';return}finishButton.disabled=true;statusEl.textContent='正在提交本轮语音…';dc.send(JSON.stringify({type:'end_utterance'}))}
-startButton.onclick=()=>startVoice().catch(async error=>{await cleanup();statusEl.textContent=`错误：${error.message}`});
-finishButton.onclick=finishSpeaking;
-stopButton.onclick=stopVoice;
+
+async function startVoice() {
+  startButton.disabled = true;
+  statusEl.textContent = '请求麦克风权限…';
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (error) {
+    throw new Error(microphoneError(error));
+  }
+  startMeter(audioStream);
+  stopButton.disabled = false;
+  statusEl.textContent = '麦克风已就绪，正在建立 WebRTC 连接…';
+  peerConnection = new RTCPeerConnection();
+  peerConnection.onconnectionstatechange = () => {
+    if (peerConnection.connectionState === 'connecting') statusEl.textContent = '正在连接语音服务…';
+    if (['failed', 'disconnected'].includes(peerConnection.connectionState)) {
+      statusEl.textContent = '连接中断，请停止后重试';
+    }
+  };
+  audioStream.getTracks().forEach(track => peerConnection.addTrack(track, audioStream));
+  dataChannel = peerConnection.createDataChannel('events');
+  dataChannel.onmessage = handleMessage;
+  dataChannel.onopen = () => {
+    statusEl.textContent = '已连接，请开始说话';
+    finishButton.disabled = false;
+  };
+  dataChannel.onclose = () => {
+    if (peerConnection && peerConnection.connectionState !== 'closed') statusEl.textContent = '连接已关闭';
+  };
+  await peerConnection.setLocalDescription(await peerConnection.createOffer());
+  statusEl.textContent = '正在收集网络连接信息…';
+  await waitForIceGathering(peerConnection);
+  statusEl.textContent = '正在连接语音服务…';
+  const response = await requestVoiceAnswer();
+  if (!response.ok) {
+    let detail = '连接失败';
+    try {
+      detail = (await response.json()).detail || detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  await peerConnection.setRemoteDescription(await response.json());
+}
+
+async function stopVoice() {
+  await cleanup();
+  statusEl.textContent = '已停止';
+}
+
+function finishSpeaking() {
+  if (!dataChannel || dataChannel.readyState !== 'open') {
+    statusEl.textContent = '语音连接尚未就绪';
+    return;
+  }
+  finishButton.disabled = true;
+  statusEl.textContent = '正在提交本轮语音…';
+  dataChannel.send(JSON.stringify({ type: 'end_utterance' }));
+}
+
+startButton.onclick = () => startVoice().catch(async error => {
+  await cleanup();
+  statusEl.textContent = `错误：${error.message}`;
+});
+finishButton.onclick = finishSpeaking;
+stopButton.onclick = stopVoice;
 </script>
 </html>

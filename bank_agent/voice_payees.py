@@ -16,7 +16,8 @@ def _normalize(value):
 def _tokens(payee):
     values = [payee.get("name", "")]
     values.extend(re.split(r"[\s,，/、;；]+", payee.get("alias", "")))
-    return {_normalize(value) for value in values if _normalize(value)}
+    normalized = {_normalize(value) for value in values}
+    return normalized - {""}
 
 
 def _phonetic(value):
