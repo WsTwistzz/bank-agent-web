@@ -77,7 +77,7 @@ class BankTool:
         for name, value in arguments.items():
             schema = self.properties[name]
             expected = python_types.get(schema.get("type"))
-            if expected and not isinstance(value, expected):
+            if expected and (not isinstance(value, expected) or isinstance(value, bool)):
                 raise ValueError(f"{name} has invalid type")
             if "minimum" in schema and value < schema["minimum"]:
                 raise ValueError(f"{name} is below minimum")

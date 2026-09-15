@@ -155,6 +155,14 @@ class BankingToolsTest(unittest.TestCase):
         self.assertTrue(self.registry.is_write("request_transfer"))
         self.assertFalse(self.registry.is_write("get_balance"))
 
+    def test_registry_rejects_boolean_as_integer(self):
+        result = self.registry.call(
+            "get_transactions", {"account_id": "A1001", "limit": True},
+            "U1", "S1",
+        )
+        self.assertFalse(result["success"])
+        self.assertIn("limit has invalid type", result["error"])
+
     def test_registry_generates_stable_write_idempotency_key_per_request(self):
         arguments = {
             "source_account_id": "A1001",
