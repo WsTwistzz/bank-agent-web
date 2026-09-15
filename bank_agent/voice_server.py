@@ -56,6 +56,9 @@ def _chinese_amount(text):
 
 def _fast_voice_response(runtime, user_id, session_id, text):
     """Handle safe, unambiguous voice operations without another LLM round-trip."""
+    # BankAgent.chat normally creates this record. Fast-path writes bypass chat,
+    # so they must establish the same trusted server-side session themselves.
+    runtime.banking_tools.actions.create_session(user_id, session_id)
     normalized = text.strip()
     if re.search(r"余额|账户余额|余额查询", normalized) and not re.search(r"转账|转给", normalized):
         result = runtime.banking_tools.get_accounts(user_id)

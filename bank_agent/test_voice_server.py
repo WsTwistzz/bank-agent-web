@@ -5,6 +5,16 @@ from bank_agent.voice_server import _fast_voice_response
 
 
 class FakeTools:
+    class Actions:
+        def __init__(self):
+            self.sessions = []
+
+        def create_session(self, user_id, session_id):
+            self.sessions.append((user_id, session_id))
+
+    def __init__(self):
+        self.actions = self.Actions()
+
     def get_accounts(self, user_id):
         return {"success": True, "data": [
             {"id": "A1004", "name": "测试账户", "balance": "500000.00", "status": "active"}
@@ -50,6 +60,7 @@ class VoiceFastPathTest(unittest.TestCase):
             self.runtime, "U4", "S1", "帮我给bob转100元。",
         )
         self.assertIn("向Bob转账 100 元", response)
+        self.assertIn(("U4", "S1"), self.runtime.banking_tools.actions.sessions)
 
 
 if __name__ == "__main__":
