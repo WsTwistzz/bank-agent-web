@@ -5,7 +5,7 @@
 <title>Bank Agent Voice</title>
 <style>
 body{font:16px system-ui;margin:0;background:#eef3f8;color:#172033}main{max-width:760px;margin:40px auto;padding:24px}section{background:#fff;padding:24px;border-radius:16px;box-shadow:0 8px 30px #17324d18}button{font:inherit;padding:12px 18px;border:0;border-radius:9px;background:#1769e0;color:#fff;cursor:pointer;margin-right:8px}button.secondary{background:#e7edf5;color:#172033}.status{color:#52606d}.turn{padding:12px 0;border-top:1px solid #e5e7eb}.user{color:#1769e0}.agent{color:#166534}#meter{height:8px;background:#e5e7eb;border-radius:8px;overflow:hidden;margin:18px 0}#level{height:100%;width:0;background:#22c55e;transition:width .08s}</style>
-<main><section><h1>Bank Agent 语音测试</h1><p class="status" id="status">尚未连接</p><div id="meter"><div id="level"></div></div><p><button id="start">开始语音</button><button id="finish" class="secondary" disabled>结束说话</button><button id="stop" class="secondary" disabled>停止会话</button></p><div id="turns"></div></section></main>
+<main><section><h1>Bank Agent 语音测试</h1><p class="status" id="status">尚未连接</p><div id="meter"><div id="level"></div></div><p><button id="start">开始语音</button><button id="finish" class="secondary" disabled>暂停说话</button><button id="stop" class="secondary" disabled>停止会话</button></p><div id="turns"></div></section></main>
 <script>
 let pc, stream, dc, audioContext, analyser, meterTimer, agentSpeaking=false;
 const statusEl=document.querySelector('#status'), turns=document.querySelector('#turns'), startButton=document.querySelector('#start'), finishButton=document.querySelector('#finish'), stopButton=document.querySelector('#stop'), levelEl=document.querySelector('#level');
