@@ -54,12 +54,39 @@ def _chinese_amount(text):
     return None
 
 
-def _fast_voice_response(runtime, user_id, session_id, text):
+def _fast_voice_response(runtime, user_id, session_id, text, voice_context=None):
     """Handle safe, unambiguous voice operations without another LLM round-trip."""
     # BankAgent.chat normally creates this record. Fast-path writes bypass chat,
     # so they must establish the same trusted server-side session themselves.
     runtime.banking_tools.actions.create_session(user_id, session_id)
     normalized = text.strip()
+    pending_choice = (voice_context or {}).get("payee_choice")
+    if pending_choice:
+        selected = None
+        lowered = normalized.lower()
+        if "英文" in normalized or "a1002" in lowered:
+            selected = next(
+                (item for item in pending_choice["payees"] if item["name"].lower() == "bob"),
+                None,
+            )
+        elif "中文" in normalized or "va1009" in lowered:
+            selected = next(
+                (item for item in pending_choice["payees"] if item["name"] == "波波"),
+                None,
+            )
+        if selected is None:
+            return "我仍无法从发音区分 Bob 和波波。请说“选择英文”或“选择中文”。"
+        result = runtime.banking_tools.request_transfer(
+            user_id, session_id, pending_choice["source_account_id"],
+            selected["account_id"], pending_choice["amount"], note="语音测试转账",
+        )
+        voice_context.pop("payee_choice", None)
+        if not result["success"]:
+            return f"转账申请创建失败：{result['error']}"
+        return (
+            f"已创建向{selected['name']}转账 {pending_choice['amount']} 元的待确认申请，"
+            "请回复“确认”或“取消”。"
+        )
     if re.search(r"余额|账户余额|余额查询", normalized) and not re.search(r"转账|转给", normalized):
         result = runtime.banking_tools.get_accounts(user_id)
         if not result["success"]:
@@ -96,6 +123,25 @@ def _fast_voice_response(runtime, user_id, session_id, text):
     source = next((item for item in accounts["data"] if item.get("status") == "active"), None)
     if not source:
         return "当前没有可用的转出账户。"
+    if voice_context is not None and query.lower() in {"bob", "波波", "鲍勃"}:
+        candidates = {}
+        for candidate_query in ("Bob", "波波"):
+            result = runtime.banking_tools.find_payee(user_id, candidate_query)
+            if result["success"]:
+                for candidate in result["data"]:
+                    if candidate["name"].lower() == "bob" or candidate["name"] == "波波":
+                        candidates[candidate["account_id"]] = candidate
+        if len(candidates) > 1:
+            voice_context["payee_choice"] = {
+                "payees": list(candidates.values()),
+                "source_account_id": source["id"],
+                "amount": amount,
+            }
+            choices = "；".join(
+                f"{'英文名' if item['name'].lower() == 'bob' else '中文名'}{item['name']}，账户 {item['account_id']}"
+                for item in candidates.values()
+            )
+            return f"检测到同音收款人：{choices}。请说“选择英文”或“选择中文”。"
     try:
         Decimal(amount)
     except InvalidOperation:
@@ -167,7 +213,7 @@ def create_app(runtime=None, asr=None):
             raise HTTPException(503, "请先运行 uv sync --extra voice 安装 WebRTC 依赖")
         pc = RTCPeerConnection()
         peers.add(pc)
-        state = {"channel": None, "detector": None, "capturing": True}
+        state = {"channel": None, "detector": None, "capturing": True, "voice_context": {}}
         user_id = os.environ.get("BANK_USER_ID", "U4")
         session_id = "VOICE" + uuid.uuid4().hex[:12].upper()
         session_locks.setdefault(session_id, asyncio.Lock())
@@ -218,6 +264,7 @@ def create_app(runtime=None, asr=None):
                     runtime = get_runtime()
                     fast_response = await asyncio.to_thread(
                         _fast_voice_response, runtime, user_id, session_id, text,
+                        state["voice_context"],
                     )
                     if fast_response is not None:
                         response_text = fast_response

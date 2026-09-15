@@ -267,12 +267,9 @@ class BankAgent:
 
     @staticmethod
     def _pending_prompt(action):
-        import json
+        from bank_agent.action_messages import pending_action_prompt
 
-        details = json.dumps(action.get("payload", {}), ensure_ascii=False, sort_keys=True)
-        if action["status"] == "WAITING_CONFIRMATION":
-            return f"操作等待确认：{action['action_type']} {details}。请明确回复“确认”或“取消”。"
-        return f"操作需要强验证：{action['action_type']} {details}。请回复“发送验证码”或“取消”。"
+        return pending_action_prompt(action)
 
     @staticmethod
     def _action_response(result):

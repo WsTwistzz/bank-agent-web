@@ -29,6 +29,11 @@ class FakeTools:
             return {"success": True, "data": [
                 {"name": "Bob", "account_id": "A1002"}
             ], "error": None}
+        if query == "波波":
+            return {"success": True, "data": [
+                {"name": "Bob", "account_id": "A1002"},
+                {"name": "波波", "account_id": "VA1009"},
+            ], "error": None}
         return {"success": True, "data": [], "error": None}
 
     def request_transfer(self, *args, **kwargs):
@@ -61,6 +66,21 @@ class VoiceFastPathTest(unittest.TestCase):
         )
         self.assertIn("向Bob转账 100 元", response)
         self.assertIn(("U4", "S1"), self.runtime.banking_tools.actions.sessions)
+
+    def test_spoken_bob_requires_disambiguation_then_uses_choice(self):
+        context = {}
+        response = _fast_voice_response(
+            self.runtime, "U4", "S1", "帮我给bob转100元。", context,
+        )
+        self.assertIn("英文名Bob", response)
+        self.assertIn("中文名波波", response)
+        self.assertIn("payee_choice", context)
+
+        response = _fast_voice_response(
+            self.runtime, "U4", "S1", "选择中文", context,
+        )
+        self.assertIn("向波波转账 100 元", response)
+        self.assertNotIn("payee_choice", context)
 
 
 if __name__ == "__main__":
