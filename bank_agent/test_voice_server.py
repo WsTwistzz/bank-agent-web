@@ -20,6 +20,15 @@ class FakeTools:
             {"id": "A1004", "name": "测试账户", "balance": "500000.00", "status": "active"}
         ], "error": None}
 
+    def get_payees(self, user_id):
+        return {"success": True, "data": [
+            {"name": "Alice", "account_id": "A1001", "phone": "13800000001", "alias": "Alice 爱丽丝 艾丽丝"},
+            {"name": "Bob", "account_id": "A1002", "phone": "13800000000", "alias": "Bob 鲍勃 波波"},
+            {"name": "波波", "account_id": "VA1009", "phone": "13910001009", "alias": "语音测试"},
+            {"name": "张伟", "account_id": "VA1001", "phone": "13910001001", "alias": "语音测试"},
+            {"name": "张薇", "account_id": "VA1002", "phone": "13910001002", "alias": "语音测试"},
+        ], "error": None}
+
     def find_payee(self, user_id, query):
         if query.lower() in {"alice", "爱丽丝", "艾丽丝"}:
             return {"success": True, "data": [
@@ -60,11 +69,12 @@ class VoiceFastPathTest(unittest.TestCase):
         )
         self.assertIn("待确认申请", response)
 
-    def test_short_transfer_verb_uses_fast_path(self):
+    def test_short_transfer_verb_uses_candidate_matching(self):
         response = _fast_voice_response(
             self.runtime, "U4", "S1", "帮我给bob转100元。",
         )
-        self.assertIn("向Bob转账 100 元", response)
+        self.assertIn("Bob", response)
+        self.assertIn("波波", response)
         self.assertIn(("U4", "S1"), self.runtime.banking_tools.actions.sessions)
 
     def test_spoken_bob_requires_disambiguation_then_uses_choice(self):
@@ -72,15 +82,28 @@ class VoiceFastPathTest(unittest.TestCase):
         response = _fast_voice_response(
             self.runtime, "U4", "S1", "帮我给bob转100元。", context,
         )
-        self.assertIn("英文名Bob", response)
-        self.assertIn("中文名波波", response)
+        self.assertIn("第1位", response)
+        self.assertIn("第2位", response)
         self.assertIn("payee_choice", context)
 
         response = _fast_voice_response(
-            self.runtime, "U4", "S1", "选择中文", context,
+            self.runtime, "U4", "S1", "账户尾号1009", context,
         )
         self.assertIn("向波波转账 100 元", response)
         self.assertNotIn("payee_choice", context)
+
+    def test_chinese_homophones_require_ordinal_choice(self):
+        context = {}
+        response = _fast_voice_response(
+            self.runtime, "U4", "S1", "给张伟转账500元", context,
+        )
+        self.assertIn("张伟", response)
+        self.assertIn("张薇", response)
+
+        response = _fast_voice_response(
+            self.runtime, "U4", "S1", "选择第二位", context,
+        )
+        self.assertIn("向张薇转账 500 元", response)
 
 
 if __name__ == "__main__":

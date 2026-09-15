@@ -246,6 +246,10 @@ class BankingTools:
             ]
         return self.read(find)
 
+    def get_payees(self, user_id):
+        """Return the user's payees for trusted server-side candidate matching."""
+        return self.read(lambda: self.gateway.get_payees(user_id)["payees"])
+
     def prepare_transfer(self, user_id, source_account_id, target_account_id, amount, note=""):
         def prepare():
             self.require_owned_account(user_id, source_account_id)

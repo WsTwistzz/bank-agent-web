@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from bank_agent.runtime import create_runtime
 from bank_agent.voice_audio import OpenAICompatibleASR, VoiceAudioConfig, VoiceTurnDetector
+from bank_agent.voice_payees import candidate_prompt, match_payee_candidates, select_payee
 
 try:
     from aiortc import RTCPeerConnection, RTCSessionDescription
@@ -62,20 +63,9 @@ def _fast_voice_response(runtime, user_id, session_id, text, voice_context=None)
     normalized = text.strip()
     pending_choice = (voice_context or {}).get("payee_choice")
     if pending_choice:
-        selected = None
-        lowered = normalized.lower()
-        if "英文" in normalized or "a1002" in lowered:
-            selected = next(
-                (item for item in pending_choice["payees"] if item["name"].lower() == "bob"),
-                None,
-            )
-        elif "中文" in normalized or "va1009" in lowered:
-            selected = next(
-                (item for item in pending_choice["payees"] if item["name"] == "波波"),
-                None,
-            )
+        selected = select_payee(normalized, pending_choice["payees"])
         if selected is None:
-            return "我仍无法从发音区分 Bob 和波波。请说“选择英文”或“选择中文”。"
+            return candidate_prompt(pending_choice["payees"])
         result = runtime.banking_tools.request_transfer(
             user_id, session_id, pending_choice["source_account_id"],
             selected["account_id"], pending_choice["amount"], note="语音测试转账",
@@ -110,38 +100,33 @@ def _fast_voice_response(runtime, user_id, session_id, text, voice_context=None)
     if not payee_match:
         return None
     query = payee_match.group(1).strip(" ，,。")
-    payees = runtime.banking_tools.find_payee(user_id, query)
+    payees = runtime.banking_tools.get_payees(user_id)
     accounts = runtime.banking_tools.get_accounts(user_id)
     if not payees["success"] or not accounts["success"]:
         return None
-    if len(payees["data"]) != 1 or not accounts["data"]:
-        return None
-    payee = payees["data"][0]
+    candidates = match_payee_candidates(query, payees["data"])
+    if not candidates:
+        return f"没有找到与“{query}”匹配的收款人。请改说账户尾号或检查收款人名单。"
+    if not accounts["data"]:
+        return "当前没有可用的转出账户。"
     amount = _chinese_amount(normalized)
     if amount is None:
-        return f"可以给{payee['name']}转账。请告诉我具体转账金额。"
+        if len(candidates) > 1:
+            return candidate_prompt(candidates) + "选定后请重新告诉我转账金额。"
+        return f"可以给{candidates[0]['name']}转账。请告诉我具体转账金额。"
     source = next((item for item in accounts["data"] if item.get("status") == "active"), None)
     if not source:
         return "当前没有可用的转出账户。"
-    if voice_context is not None and query.lower() in {"bob", "波波", "鲍勃"}:
-        candidates = {}
-        for candidate_query in ("Bob", "波波"):
-            result = runtime.banking_tools.find_payee(user_id, candidate_query)
-            if result["success"]:
-                for candidate in result["data"]:
-                    if candidate["name"].lower() == "bob" or candidate["name"] == "波波":
-                        candidates[candidate["account_id"]] = candidate
-        if len(candidates) > 1:
-            voice_context["payee_choice"] = {
-                "payees": list(candidates.values()),
-                "source_account_id": source["id"],
-                "amount": amount,
-            }
-            choices = "；".join(
-                f"{'英文名' if item['name'].lower() == 'bob' else '中文名'}{item['name']}，账户 {item['account_id']}"
-                for item in candidates.values()
-            )
-            return f"检测到同音收款人：{choices}。请说“选择英文”或“选择中文”。"
+    if len(candidates) > 1:
+        if voice_context is None:
+            return candidate_prompt(candidates)
+        voice_context["payee_choice"] = {
+            "payees": candidates,
+            "source_account_id": source["id"],
+            "amount": amount,
+        }
+        return candidate_prompt(candidates)
+    payee = candidates[0]
     try:
         Decimal(amount)
     except InvalidOperation:
