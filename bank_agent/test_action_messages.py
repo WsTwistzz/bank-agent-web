@@ -21,6 +21,16 @@ class PendingActionPromptTest(unittest.TestCase):
         self.assertNotIn("user_id", prompt)
         self.assertNotIn("{", prompt)
 
+    def test_non_transfer_includes_confirmation_target(self):
+        prompt = pending_action_prompt({
+            "action_type": "SET_CARD_LIMIT",
+            "status": "WAITING_CONFIRMATION",
+            "payload": {"user_id": "U4", "card_id": "C1004", "amount": "5000"},
+        })
+        self.assertIn("银行卡 C1004", prompt)
+        self.assertIn("5000 元", prompt)
+        self.assertNotIn("user_id", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
