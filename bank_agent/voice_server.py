@@ -51,7 +51,6 @@ def _event(channel, event_type, text=None, **payload):
 
 def create_app(runtime=None, asr=None):
     peers = set()
-    session_locks = {}
     owned_runtime = runtime is None
     runtime_holder = {"value": runtime}
     asr = asr or OpenAICompatibleASR(
@@ -100,7 +99,7 @@ def create_app(runtime=None, asr=None):
         state = {"channel": None, "detector": None, "capturing": True, "voice_context": {}}
         user_id = os.environ.get("BANK_USER_ID", "U4")
         session_id = "VOICE" + uuid.uuid4().hex[:12].upper()
-        session_locks.setdefault(session_id, asyncio.Lock())
+        session_lock = asyncio.Lock()
 
         @pc.on("datachannel")
         def on_datachannel(channel):
@@ -130,13 +129,12 @@ def create_app(runtime=None, asr=None):
             if pc.connectionState in {"failed", "closed"}:
                 await pc.close()
                 peers.discard(pc)
-                session_locks.pop(session_id, None)
 
         async def process_utterance(pcm):
             channel = state["channel"]
             if not channel:
                 return
-            async with session_locks[session_id]:
+            async with session_lock:
                 try:
                     _event(channel, "status", "正在识别…")
                     text = await asr.transcribe(pcm, audio_config.sample_rate)
