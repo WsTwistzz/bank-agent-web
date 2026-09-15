@@ -30,6 +30,9 @@ class FakeTools:
             {"name": "张薇", "account_id": "VA1002", "phone": "13910001002", "alias": "语音测试"},
         ], "error": None}
 
+    def get_pending_action(self, user_id, session_id):
+        return {"success": True, "data": None, "error": None}
+
     def find_payee(self, user_id, query):
         if query.lower() in {"alice", "爱丽丝", "艾丽丝"}:
             return {"success": True, "data": [
@@ -104,6 +107,21 @@ class VoiceFastPathTest(unittest.TestCase):
         response = _fast_voice_response(
             self.runtime, "U4", "S1", "选择第二位", context,
         )
+        self.assertIn("向张薇转账 500 元", response)
+
+    def test_candidate_choice_can_be_cancelled(self):
+        context = {}
+        _fast_voice_response(self.runtime, "U4", "S1", "给张伟转账500元", context)
+        response = _fast_voice_response(self.runtime, "U4", "S1", "取消", context)
+        self.assertIn("已取消", response)
+        self.assertNotIn("payee_choice", context)
+
+    def test_missing_amount_continues_after_candidate_choice(self):
+        context = {}
+        _fast_voice_response(self.runtime, "U4", "S1", "给张伟转账", context)
+        response = _fast_voice_response(self.runtime, "U4", "S1", "选择第二位", context)
+        self.assertEqual("已选择张薇，请告诉我转账金额。", response)
+        response = _fast_voice_response(self.runtime, "U4", "S1", "500元", context)
         self.assertIn("向张薇转账 500 元", response)
 
 

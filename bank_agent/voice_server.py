@@ -10,10 +10,8 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import uuid
 from contextlib import asynccontextmanager
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +23,7 @@ from pydantic import BaseModel
 
 from bank_agent.runtime import create_runtime
 from bank_agent.voice_audio import OpenAICompatibleASR, VoiceAudioConfig, VoiceTurnDetector
-from bank_agent.voice_payees import candidate_prompt, match_payee_candidates, select_payee
+from bank_agent.voice_transfer import fast_voice_response as _fast_voice_response
 
 try:
     from aiortc import RTCPeerConnection, RTCSessionDescription
@@ -36,108 +34,6 @@ except ImportError:  # Existing text-only installs must remain usable.
 
 ROOT = Path(__file__).resolve().parent
 PAGE = ROOT / "voice.html"
-
-
-def _chinese_amount(text):
-    """Parse the common spoken amounts used by the voice test fixtures."""
-    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:元|块|人民币)?", text)
-    if match:
-        return match.group(1)
-    common = {
-        "一百": "100", "两百": "200", "二百": "200", "三百": "300",
-        "五百": "500", "一千": "1000", "两千": "2000", "二千": "2000",
-        "三千": "3000", "五千": "5000", "一万": "10000", "两万": "20000",
-        "二万": "20000", "五万": "50000",
-    }
-    for phrase, amount in common.items():
-        if phrase in text:
-            return amount
-    return None
-
-
-def _fast_voice_response(runtime, user_id, session_id, text, voice_context=None):
-    """Handle safe, unambiguous voice operations without another LLM round-trip."""
-    # BankAgent.chat normally creates this record. Fast-path writes bypass chat,
-    # so they must establish the same trusted server-side session themselves.
-    runtime.banking_tools.actions.create_session(user_id, session_id)
-    normalized = text.strip()
-    pending_choice = (voice_context or {}).get("payee_choice")
-    if pending_choice:
-        selected = select_payee(normalized, pending_choice["payees"])
-        if selected is None:
-            return candidate_prompt(pending_choice["payees"])
-        result = runtime.banking_tools.request_transfer(
-            user_id, session_id, pending_choice["source_account_id"],
-            selected["account_id"], pending_choice["amount"], note="语音测试转账",
-        )
-        voice_context.pop("payee_choice", None)
-        if not result["success"]:
-            return f"转账申请创建失败：{result['error']}"
-        return (
-            f"已创建向{selected['name']}转账 {pending_choice['amount']} 元的待确认申请，"
-            "请回复“确认”或“取消”。"
-        )
-    if re.search(r"余额|账户余额|余额查询", normalized) and not re.search(r"转账|转给", normalized):
-        result = runtime.banking_tools.get_accounts(user_id)
-        if not result["success"]:
-            return f"查询账户失败：{result['error']}"
-        accounts = result["data"]
-        if not accounts:
-            return "当前没有可用账户。"
-        details = "；".join(
-            f"{item['name']}（{item['id']}）余额 {item['balance']} 元"
-            for item in accounts
-        )
-        return f"已查到你的账户：{details}。"
-
-    if not re.search(r"转账|转给|转到|给\s*.+?\s*转\s*(?:\d|[零〇一二两三四五六七八九十百千万])", normalized, re.IGNORECASE):
-        return None
-    payee_match = re.search(
-        r"给\s*(.+?)\s*(?:转账|转给|转到|转(?=\s*(?:\d|[零〇一二两三四五六七八九十百千万])))",
-        normalized,
-        re.IGNORECASE,
-    )
-    if not payee_match:
-        return None
-    query = payee_match.group(1).strip(" ，,。")
-    payees = runtime.banking_tools.get_payees(user_id)
-    accounts = runtime.banking_tools.get_accounts(user_id)
-    if not payees["success"] or not accounts["success"]:
-        return None
-    candidates = match_payee_candidates(query, payees["data"])
-    if not candidates:
-        return f"没有找到与“{query}”匹配的收款人。请改说账户尾号或检查收款人名单。"
-    if not accounts["data"]:
-        return "当前没有可用的转出账户。"
-    amount = _chinese_amount(normalized)
-    if amount is None:
-        if len(candidates) > 1:
-            return candidate_prompt(candidates) + "选定后请重新告诉我转账金额。"
-        return f"可以给{candidates[0]['name']}转账。请告诉我具体转账金额。"
-    source = next((item for item in accounts["data"] if item.get("status") == "active"), None)
-    if not source:
-        return "当前没有可用的转出账户。"
-    if len(candidates) > 1:
-        if voice_context is None:
-            return candidate_prompt(candidates)
-        voice_context["payee_choice"] = {
-            "payees": candidates,
-            "source_account_id": source["id"],
-            "amount": amount,
-        }
-        return candidate_prompt(candidates)
-    payee = candidates[0]
-    try:
-        Decimal(amount)
-    except InvalidOperation:
-        return None
-    result = runtime.banking_tools.request_transfer(
-        user_id, session_id, source["id"], payee["account_id"], amount,
-        note="语音测试转账",
-    )
-    if not result["success"]:
-        return f"转账申请创建失败：{result['error']}"
-    return f"已创建向{payee['name']}转账 {amount} 元的待确认申请，当前从{source['name']}转出。请回复“确认”或“取消”。"
 
 
 class Offer(BaseModel):
