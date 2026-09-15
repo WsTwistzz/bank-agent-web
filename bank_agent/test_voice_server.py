@@ -15,6 +15,10 @@ class FakeTools:
             return {"success": True, "data": [
                 {"name": "Alice", "account_id": "A1001"}
             ], "error": None}
+        if query.lower() == "bob":
+            return {"success": True, "data": [
+                {"name": "Bob", "account_id": "A1002"}
+            ], "error": None}
         return {"success": True, "data": [], "error": None}
 
     def request_transfer(self, *args, **kwargs):
@@ -40,6 +44,12 @@ class VoiceFastPathTest(unittest.TestCase):
             self.runtime, "U4", "S1", "给爱丽丝转账一千元",
         )
         self.assertIn("待确认申请", response)
+
+    def test_short_transfer_verb_uses_fast_path(self):
+        response = _fast_voice_response(
+            self.runtime, "U4", "S1", "帮我给bob转100元。",
+        )
+        self.assertIn("向Bob转账 100 元", response)
 
 
 if __name__ == "__main__":

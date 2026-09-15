@@ -70,9 +70,13 @@ def _fast_voice_response(runtime, user_id, session_id, text):
         )
         return f"已查到你的账户：{details}。"
 
-    if not re.search(r"转账|转给|转到", normalized):
+    if not re.search(r"转账|转给|转到|给\s*.+?\s*转\s*(?:\d|[零〇一二两三四五六七八九十百千万])", normalized, re.IGNORECASE):
         return None
-    payee_match = re.search(r"给(.+?)(?:转账|转给|转到)", normalized)
+    payee_match = re.search(
+        r"给\s*(.+?)\s*(?:转账|转给|转到|转(?=\s*(?:\d|[零〇一二两三四五六七八九十百千万])))",
+        normalized,
+        re.IGNORECASE,
+    )
     if not payee_match:
         return None
     query = payee_match.group(1).strip(" ，,。")
@@ -160,7 +164,7 @@ def create_app(runtime=None, asr=None):
             raise HTTPException(503, "请先运行 uv sync --extra voice 安装 WebRTC 依赖")
         pc = RTCPeerConnection()
         peers.add(pc)
-        state = {"channel": None}
+        state = {"channel": None, "detector": None, "capturing": True}
         user_id = os.environ.get("BANK_USER_ID", "U4")
         session_id = "VOICE" + uuid.uuid4().hex[:12].upper()
         session_locks.setdefault(session_id, asyncio.Lock())
@@ -168,6 +172,25 @@ def create_app(runtime=None, asr=None):
         @pc.on("datachannel")
         def on_datachannel(channel):
             state["channel"] = channel
+
+            @channel.on("message")
+            def on_message(message):
+                try:
+                    event = json.loads(message)
+                except (TypeError, json.JSONDecodeError):
+                    return
+                if event.get("type") != "end_utterance" or not state["capturing"]:
+                    return
+                state["capturing"] = False
+                _event(channel, "capture", False)
+                detector = state["detector"]
+                utterance = detector.flush() if detector else None
+                if utterance:
+                    asyncio.create_task(process_utterance(utterance))
+                else:
+                    state["capturing"] = True
+                    _event(channel, "capture", True)
+                    _event(channel, "status", "还没有检测到有效语音，请再试一次")
 
         @pc.on("connectionstatechange")
         async def on_connectionstatechange():
@@ -225,6 +248,9 @@ def create_app(runtime=None, asr=None):
                             error_type=type(error).__name__, error=str(error),
                         )
                     _event(channel, "error", str(error))
+                finally:
+                    state["capturing"] = True
+                    _event(channel, "capture", True)
 
         @pc.on("track")
         def on_track(track):
@@ -233,11 +259,14 @@ def create_app(runtime=None, asr=None):
 
             async def consume():
                 detector = VoiceTurnDetector(audio_config)
+                state["detector"] = detector
                 resampler = AudioResampler(format="s16", layout="mono", rate=16_000)
                 try:
                     while True:
                         source = await track.recv()
                         for frame in resampler.resample(source):
+                            if not state["capturing"]:
+                                continue
                             samples = frame.to_ndarray().reshape(-1).astype(np.int16)
                             pcm = samples.tobytes()
                             rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2))) if samples.size else 0
@@ -245,6 +274,8 @@ def create_app(runtime=None, asr=None):
                             if started and state["channel"]:
                                 _event(state["channel"], "status", "正在聆听…")
                             if utterance:
+                                state["capturing"] = False
+                                _event(state["channel"], "capture", False)
                                 asyncio.create_task(process_utterance(utterance))
                 except Exception:
                     utterance = detector.flush()
