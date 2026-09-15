@@ -141,7 +141,8 @@ OTP、password、token、credential 等敏感字段会自动遮盖。日志不�
 语音入口保留现有 Supervisor、Planner、BankingTools、Action、OTP 和审计逻辑。浏览器通过
 WebRTC 发送麦克风音轨；服务端转为 16 kHz PCM，经静音分段后调用兼容 OpenAI
 `/audio/transcriptions` 的 ASR 服务。最终文本才会提交给 Bank Agent，增量识别文本不会触发
-银行操作。回复文本目前使用浏览器 SpeechSynthesis 播放，便于先验证交互效果。
+银行操作。回复默认通过 SiliconFlow 流式 TTS 播放；云端 TTS 失败时会回退到浏览器
+SpeechSynthesis，保证文本结果仍可播报。
 
 安装语音依赖：
 
@@ -178,4 +179,16 @@ uv run --extra voice python -m bank_agent.voice_server
 打开 `http://127.0.0.1:8090`，点击“开始语音”并允许麦克风权限。默认按 700ms 静音判定
 一轮结束；可通过 `VOICE_SILENCE_MS`、`VOICE_MIN_SPEECH_MS` 和
 `VOICE_RMS_THRESHOLD` 调整。该原型仅默认绑定 localhost，尚未包含公网 TURN、登录态绑定
-和服务端流式 TTS，不应直接作为生产银行入口部署。
+默认还会调用 SiliconFlow `/audio/speech`，把流式 PCM 通过 WebRTC DataChannel 发送给浏览器。
+浏览器支持自动语音打断，并用带 `turn_id` 的 interrupt 事件通知服务端停止当前音频流。
+ASR 仍是整段上传，并非流式识别，不应直接作为生产银行入口部署。
+
+可选 TTS 配置（未设置时复用 `VOICE_ASR_API_KEY`）：
+
+```dotenv
+VOICE_TTS_BASE_URL=https://api.siliconflow.cn/v1
+VOICE_TTS_API_KEY=你的_SiliconFlow_API_Key
+VOICE_TTS_MODEL=FunAudioLLM/CosyVoice2-0.5B
+VOICE_TTS_VOICE=FunAudioLLM/CosyVoice2-0.5B:anna
+VOICE_TTS_SAMPLE_RATE=24000
+```

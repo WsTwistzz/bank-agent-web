@@ -1,10 +1,12 @@
+import json
 import struct
 import unittest
 
 import httpx
 
 from bank_agent.voice_audio import (
-    OpenAICompatibleASR, VoiceAudioConfig, VoiceTurnDetector, pcm_to_wav,
+    OpenAICompatibleASR, OpenAICompatibleTTS, VoiceAudioConfig,
+    VoiceTurnDetector, pcm_to_wav,
 )
 
 
@@ -64,3 +66,26 @@ class ASRClientTest(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(RuntimeError, "VOICE_ASR_API_KEY"):
             await asr.transcribe(frame(1000))
+
+
+class TTSClientTest(unittest.IsolatedAsyncioTestCase):
+    async def test_streams_pcm_with_siliconflow_parameters(self):
+        async def handler(request):
+            self.assertEqual(request.url.path, "/v1/audio/speech")
+            self.assertEqual(request.headers["authorization"], "Bearer secret")
+            payload = json.loads(await request.aread())
+            self.assertTrue(payload["stream"])
+            self.assertEqual("pcm", payload["response_format"])
+            self.assertEqual(24_000, payload["sample_rate"])
+            return httpx.Response(200, content=b"\x01\x00\x02\x00")
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            tts = OpenAICompatibleTTS(
+                "https://api.siliconflow.cn/v1", "FunAudioLLM/CosyVoice2-0.5B",
+                "secret", client=client,
+            )
+            chunks = [chunk async for chunk in tts.stream("测试")]
+            self.assertEqual(b"\x01\x00\x02\x00", b"".join(chunks))
+        finally:
+            await client.aclose()

@@ -111,3 +111,51 @@ class OpenAICompatibleASR:
         if not isinstance(text, str):
             raise RuntimeError("ASR 服务响应中没有 text")
         return text.strip()
+
+
+class OpenAICompatibleTTS:
+    """Stream raw PCM audio from an OpenAI-compatible speech endpoint."""
+
+    def __init__(
+        self, base_url, model, api_key="", voice=None, sample_rate=24_000,
+        timeout=60, client=None,
+    ):
+        self.url = base_url.rstrip("/") + "/audio/speech"
+        self.model = model
+        self.api_key = api_key
+        self.voice = voice or f"{model}:anna"
+        self.sample_rate = sample_rate
+        self.timeout = timeout
+        self.client = client
+
+    async def stream(self, text):
+        if not self.api_key:
+            raise RuntimeError("VOICE_TTS_API_KEY 未配置")
+        body = {
+            "model": self.model,
+            "voice": self.voice,
+            "input": text,
+            "response_format": "pcm",
+            "sample_rate": self.sample_rate,
+            "stream": True,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        owns_client = self.client is None
+        client = self.client or httpx.AsyncClient(timeout=self.timeout)
+        try:
+            async with client.stream("POST", self.url, headers=headers, json=body) as response:
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as error:
+                    raise RuntimeError(
+                        f"TTS 服务请求失败（HTTP {response.status_code}）"
+                    ) from error
+                async for chunk in response.aiter_bytes():
+                    if chunk:
+                        yield chunk
+        finally:
+            if owns_client:
+                await client.aclose()

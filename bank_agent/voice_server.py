@@ -22,7 +22,12 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from bank_agent.runtime import create_runtime
-from bank_agent.voice_audio import OpenAICompatibleASR, VoiceAudioConfig, VoiceTurnDetector
+from bank_agent.voice_audio import (
+    OpenAICompatibleASR,
+    OpenAICompatibleTTS,
+    VoiceAudioConfig,
+    VoiceTurnDetector,
+)
 from bank_agent.voice_transfer import fast_voice_response as _fast_voice_response
 
 try:
@@ -49,7 +54,7 @@ def _event(channel, event_type, text=None, **payload):
         channel.send(json.dumps(event, ensure_ascii=False))
 
 
-def create_app(runtime=None, asr=None):
+def create_app(runtime=None, asr=None, tts=None):
     peers = set()
     owned_runtime = runtime is None
     runtime_holder = {"value": runtime}
@@ -57,6 +62,14 @@ def create_app(runtime=None, asr=None):
         os.environ.get("VOICE_ASR_BASE_URL", "https://api.siliconflow.cn/v1"),
         os.environ.get("VOICE_ASR_MODEL", "FunAudioLLM/SenseVoiceSmall"),
         os.environ.get("VOICE_ASR_API_KEY") or os.environ.get("SILICONFLOW_API_KEY", ""),
+    )
+    tts_key = os.environ.get("VOICE_TTS_API_KEY") or os.environ.get("VOICE_ASR_API_KEY") or os.environ.get("SILICONFLOW_API_KEY", "")
+    tts = tts or OpenAICompatibleTTS(
+        os.environ.get("VOICE_TTS_BASE_URL", "https://api.siliconflow.cn/v1"),
+        os.environ.get("VOICE_TTS_MODEL", "FunAudioLLM/CosyVoice2-0.5B"),
+        tts_key,
+        voice=os.environ.get("VOICE_TTS_VOICE"),
+        sample_rate=int(os.environ.get("VOICE_TTS_SAMPLE_RATE", "24000")),
     )
     audio_config = VoiceAudioConfig(
         silence_ms=int(os.environ.get("VOICE_SILENCE_MS", "700")),
@@ -88,7 +101,8 @@ def create_app(runtime=None, asr=None):
     @app.get("/health")
     def health():
         return {"status": "ok", "webrtc": RTCPeerConnection is not None,
-                "asr_model": asr.model, "asr_configured": bool(asr.api_key)}
+                "asr_model": asr.model, "asr_configured": bool(asr.api_key),
+                "tts_model": tts.model, "tts_configured": bool(tts.api_key)}
 
     @app.post("/voice/offer")
     async def offer(data: Offer):
@@ -96,7 +110,15 @@ def create_app(runtime=None, asr=None):
             raise HTTPException(503, "请先运行 uv sync --extra voice 安装 WebRTC 依赖")
         pc = RTCPeerConnection()
         peers.add(pc)
-        state = {"channel": None, "detector": None, "capturing": True, "voice_context": {}}
+        state = {
+            "channel": None,
+            "detector": None,
+            "capturing": True,
+            "voice_context": {},
+            "tts_turn_id": None,
+            "tts_interrupted": False,
+            "playback_active": False,
+        }
         user_id = os.environ.get("BANK_USER_ID", "U4")
         session_id = "VOICE" + uuid.uuid4().hex[:12].upper()
         session_lock = asyncio.Lock()
@@ -113,15 +135,25 @@ def create_app(runtime=None, asr=None):
                     return
                 event_type = event.get("type")
                 if event_type == "playback_started":
+                    state["playback_active"] = True
                     state["capturing"] = False
                     if state["detector"]:
                         state["detector"].reset()
                     return
                 if event_type == "playback_finished":
+                    state["playback_active"] = False
                     state["capturing"] = True
                     if state["detector"]:
                         state["detector"].reset()
                     _event(channel, "capture", enabled=True)
+                    return
+                if event_type == "interrupt":
+                    if event.get("turn_id") == state["tts_turn_id"]:
+                        state["tts_interrupted"] = True
+                    state["playback_active"] = False
+                    state["capturing"] = True
+                    if state["detector"]:
+                        state["detector"].reset()
                     return
                 if event_type != "end_utterance" or not state["capturing"]:
                     return
@@ -182,7 +214,34 @@ def create_app(runtime=None, asr=None):
                         finally:
                             progress = False
                             keepalive_task.cancel()
-                    _event(channel, "response", response_text)
+                    turn_id = uuid.uuid4().hex
+                    _event(channel, "response", response_text, audio="stream", turn_id=turn_id)
+                    state["tts_turn_id"] = turn_id
+                    state["tts_interrupted"] = False
+                    state["playback_active"] = True
+                    _event(
+                        channel, "tts_start", turn_id=turn_id,
+                        sample_rate=tts.sample_rate,
+                    )
+                    try:
+                        async for chunk in tts.stream(response_text):
+                            if state["tts_interrupted"]:
+                                break
+                            for offset in range(0, len(chunk), 16_384):
+                                channel.send(chunk[offset:offset + 16_384])
+                                while channel.bufferedAmount > 1_000_000:
+                                    await asyncio.sleep(0.01)
+                        _event(
+                            channel, "tts_end", turn_id=turn_id,
+                            interrupted=state["tts_interrupted"],
+                        )
+                    except Exception as tts_error:
+                        _event(
+                            channel, "tts_error", str(tts_error),
+                            turn_id=turn_id,
+                        )
+                    finally:
+                        state["tts_turn_id"] = None
                     _event(channel, "status", "请继续说话")
                 except Exception as error:
                     current_runtime = runtime_holder["value"]
@@ -193,8 +252,9 @@ def create_app(runtime=None, asr=None):
                         )
                     _event(channel, "error", str(error))
                 finally:
-                    state["capturing"] = True
-                    _event(channel, "capture", enabled=True)
+                    state["capturing"] = not state["playback_active"]
+                    if state["capturing"]:
+                        _event(channel, "capture", enabled=True)
 
         @pc.on("track")
         def on_track(track):

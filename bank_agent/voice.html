@@ -41,6 +41,11 @@ let speechGeneration = 0;
 let playbackStartedAt = 0;
 let bargeInFrames = 0;
 let ambientLevel = 4;
+let currentTtsTurn;
+let pendingResponseText = '';
+let nextAudioTime = 0;
+let pcmRemainder = new Uint8Array();
+const scheduledSources = new Set();
 
 const statusEl = document.querySelector('#status');
 const turnsEl = document.querySelector('#turns');
@@ -60,8 +65,10 @@ function setMicrophoneEnabled(enabled) {
   audioStream?.getAudioTracks().forEach(track => { track.enabled = enabled; });
 }
 
-function sendControl(type) {
-  if (dataChannel?.readyState === 'open') dataChannel.send(JSON.stringify({ type }));
+function sendControl(type, payload = {}) {
+  if (dataChannel?.readyState === 'open') {
+    dataChannel.send(JSON.stringify({ type, ...payload }));
+  }
 }
 
 function speak(text) {
@@ -91,7 +98,57 @@ function speak(text) {
   speechSynthesis.speak(utterance);
 }
 
+function stopStreamedAudio() {
+  for (const source of scheduledSources) {
+    try { source.stop(); } catch {}
+  }
+  scheduledSources.clear();
+  nextAudioTime = 0;
+  pcmRemainder = new Uint8Array();
+}
+
+function playPcmChunk(chunk, sampleRate) {
+  const incoming = new Uint8Array(chunk);
+  const bytes = new Uint8Array(pcmRemainder.length + incoming.length);
+  bytes.set(pcmRemainder);
+  bytes.set(incoming, pcmRemainder.length);
+  const usableLength = bytes.length - (bytes.length % 2);
+  pcmRemainder = bytes.slice(usableLength);
+  if (!usableLength) return;
+
+  const sampleCount = usableLength / 2;
+  const buffer = audioContext.createBuffer(1, sampleCount, sampleRate);
+  const samples = buffer.getChannelData(0);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, usableLength);
+  for (let index = 0; index < sampleCount; index += 1) {
+    samples[index] = view.getInt16(index * 2, true) / 32768;
+  }
+  const source = audioContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioContext.destination);
+  scheduledSources.add(source);
+  source.onended = () => scheduledSources.delete(source);
+  const startAt = Math.max(audioContext.currentTime + 0.03, nextAudioTime);
+  source.start(startAt);
+  nextAudioTime = startAt + buffer.duration;
+}
+
+function resumeAfterPlayback() {
+  agentSpeaking = false;
+  currentTtsTurn = undefined;
+  setMicrophoneEnabled(true);
+  sendControl('playback_finished');
+  if (dataChannel?.readyState === 'open') {
+    finishButton.disabled = false;
+    statusEl.textContent = '请继续说话';
+  }
+}
+
 function handleMessage(message) {
+  if (message.data instanceof ArrayBuffer) {
+    if (currentTtsTurn) playPcmChunk(message.data, currentTtsTurn.sampleRate);
+    return;
+  }
   const event = JSON.parse(message.data);
   if (event.type === 'status' && !agentSpeaking) statusEl.textContent = event.text;
   if (event.type === 'capture' && !agentSpeaking) {
@@ -101,7 +158,31 @@ function handleMessage(message) {
   if (event.type === 'transcript') addTurn('user', event.text);
   if (event.type === 'response') {
     addTurn('agent', event.text);
-    speak(event.text);
+    pendingResponseText = event.text;
+    if (event.audio !== 'stream') speak(event.text);
+  }
+  if (event.type === 'tts_start') {
+    stopStreamedAudio();
+    currentTtsTurn = { id: event.turn_id, sampleRate: event.sample_rate };
+    agentSpeaking = true;
+    playbackStartedAt = Date.now();
+    bargeInFrames = 0;
+    finishButton.disabled = true;
+    statusEl.textContent = 'Agent 正在流式播报…';
+    sendControl('playback_started');
+    setMicrophoneEnabled(true);
+  }
+  if (event.type === 'tts_end' && currentTtsTurn?.id === event.turn_id) {
+    const remainingMs = Math.max(0, (nextAudioTime - audioContext.currentTime) * 1000);
+    setTimeout(() => {
+      if (currentTtsTurn?.id === event.turn_id) resumeAfterPlayback();
+    }, remainingMs);
+  }
+  if (event.type === 'tts_error' && currentTtsTurn?.id === event.turn_id) {
+    stopStreamedAudio();
+    currentTtsTurn = undefined;
+    agentSpeaking = false;
+    speak(pendingResponseText);
   }
   if (event.type === 'error') statusEl.textContent = `错误：${event.text}`;
 }
@@ -166,6 +247,7 @@ async function cleanup() {
   playbackStartedAt = 0;
   bargeInFrames = 0;
   speechSynthesis.cancel();
+  stopStreamedAudio();
   audioStream?.getTracks().forEach(track => track.stop());
   audioStream = undefined;
   dataChannel?.close();
@@ -223,6 +305,7 @@ async function startVoice() {
   };
   audioStream.getTracks().forEach(track => peerConnection.addTrack(track, audioStream));
   dataChannel = peerConnection.createDataChannel('events');
+  dataChannel.binaryType = 'arraybuffer';
   dataChannel.onmessage = handleMessage;
   dataChannel.onopen = () => {
     statusEl.textContent = '已连接，请开始说话';
@@ -264,10 +347,15 @@ function finishSpeaking() {
 
 function interruptPlayback() {
   if (!agentSpeaking) return;
+  const interruptedTurn = currentTtsTurn?.id;
   speechGeneration += 1;
   agentSpeaking = false;
   speechSynthesis.cancel();
-  sendControl('playback_finished');
+  stopStreamedAudio();
+  currentTtsTurn = undefined;
+  if (interruptedTurn) sendControl('interrupt', { turn_id: interruptedTurn });
+  else sendControl('playback_finished');
+  setMicrophoneEnabled(true);
   finishButton.disabled = false;
   statusEl.textContent = '已打断 Agent，请开始说话';
 }
