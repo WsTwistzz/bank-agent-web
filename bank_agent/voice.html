@@ -24,7 +24,6 @@ button.secondary { background: #e7edf5; color: #172033; }
     <p>
       <button id="start">开始语音</button>
       <button id="finish" class="secondary" disabled>暂停说话</button>
-      <button id="interrupt" class="secondary" disabled>打断 Agent</button>
       <button id="stop" class="secondary" disabled>停止会话</button>
     </p>
     <div id="turns"></div>
@@ -39,12 +38,14 @@ let analyser;
 let meterTimer;
 let agentSpeaking = false;
 let speechGeneration = 0;
+let playbackStartedAt = 0;
+let bargeInFrames = 0;
+let ambientLevel = 4;
 
 const statusEl = document.querySelector('#status');
 const turnsEl = document.querySelector('#turns');
 const startButton = document.querySelector('#start');
 const finishButton = document.querySelector('#finish');
-const interruptButton = document.querySelector('#interrupt');
 const stopButton = document.querySelector('#stop');
 const levelEl = document.querySelector('#level');
 
@@ -59,13 +60,19 @@ function setMicrophoneEnabled(enabled) {
   audioStream?.getAudioTracks().forEach(track => { track.enabled = enabled; });
 }
 
+function sendControl(type) {
+  if (dataChannel?.readyState === 'open') dataChannel.send(JSON.stringify({ type }));
+}
+
 function speak(text) {
   const generation = ++speechGeneration;
   speechSynthesis.cancel();
   agentSpeaking = true;
-  setMicrophoneEnabled(false);
+  playbackStartedAt = Date.now();
+  bargeInFrames = 0;
+  sendControl('playback_started');
+  setMicrophoneEnabled(true);
   finishButton.disabled = true;
-  interruptButton.disabled = false;
   statusEl.textContent = 'Agent 正在播报…';
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'zh-CN';
@@ -73,8 +80,7 @@ function speak(text) {
   const resumeListening = () => {
     if (generation !== speechGeneration) return;
     agentSpeaking = false;
-    interruptButton.disabled = true;
-    setMicrophoneEnabled(true);
+    sendControl('playback_finished');
     if (dataChannel?.readyState === 'open') {
       finishButton.disabled = false;
       statusEl.textContent = '请继续说话';
@@ -110,6 +116,14 @@ function startMeter(stream) {
     analyser.getByteFrequencyData(values);
     const average = values.reduce((sum, value) => sum + value, 0) / values.length;
     levelEl.style.width = `${Math.min(100, average * 2)}%`;
+    if (!agentSpeaking) {
+      ambientLevel = ambientLevel * 0.95 + average * 0.05;
+      return;
+    }
+    const bargeInThreshold = Math.max(18, ambientLevel * 3);
+    const userIsSpeaking = Date.now() - playbackStartedAt > 500 && average >= bargeInThreshold;
+    bargeInFrames = userIsSpeaking ? bargeInFrames + 1 : 0;
+    if (bargeInFrames >= 3) interruptPlayback();
   }, 80);
 }
 
@@ -149,6 +163,8 @@ async function cleanup() {
   meterTimer = undefined;
   agentSpeaking = false;
   speechGeneration += 1;
+  playbackStartedAt = 0;
+  bargeInFrames = 0;
   speechSynthesis.cancel();
   audioStream?.getTracks().forEach(track => track.stop());
   audioStream = undefined;
@@ -161,7 +177,6 @@ async function cleanup() {
   levelEl.style.width = '0';
   startButton.disabled = false;
   finishButton.disabled = true;
-  interruptButton.disabled = true;
   stopButton.disabled = true;
 }
 
@@ -247,13 +262,12 @@ function finishSpeaking() {
   dataChannel.send(JSON.stringify({ type: 'end_utterance' }));
 }
 
-function interruptAgent() {
+function interruptPlayback() {
   if (!agentSpeaking) return;
   speechGeneration += 1;
   agentSpeaking = false;
   speechSynthesis.cancel();
-  setMicrophoneEnabled(true);
-  interruptButton.disabled = true;
+  sendControl('playback_finished');
   finishButton.disabled = false;
   statusEl.textContent = '已打断 Agent，请开始说话';
 }
@@ -263,7 +277,6 @@ startButton.onclick = () => startVoice().catch(async error => {
   statusEl.textContent = `错误：${error.message}`;
 });
 finishButton.onclick = finishSpeaking;
-interruptButton.onclick = interruptAgent;
 stopButton.onclick = stopVoice;
 </script>
 </html>

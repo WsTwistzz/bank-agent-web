@@ -111,7 +111,19 @@ def create_app(runtime=None, asr=None):
                     event = json.loads(message)
                 except (TypeError, json.JSONDecodeError):
                     return
-                if event.get("type") != "end_utterance" or not state["capturing"]:
+                event_type = event.get("type")
+                if event_type == "playback_started":
+                    state["capturing"] = False
+                    if state["detector"]:
+                        state["detector"].reset()
+                    return
+                if event_type == "playback_finished":
+                    state["capturing"] = True
+                    if state["detector"]:
+                        state["detector"].reset()
+                    _event(channel, "capture", enabled=True)
+                    return
+                if event_type != "end_utterance" or not state["capturing"]:
                     return
                 state["capturing"] = False
                 _event(channel, "capture", enabled=False)
