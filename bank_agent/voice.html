@@ -9,6 +9,10 @@ main { max-width: 760px; margin: 40px auto; padding: 24px; }
 section { background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 8px 30px #17324d18; }
 button { font: inherit; padding: 12px 18px; border: 0; border-radius: 9px; background: #1769e0; color: #fff; cursor: pointer; margin-right: 8px; }
 button.secondary { background: #e7edf5; color: #172033; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+.text-entry { display: flex; gap: 8px; margin: 16px 0 8px; }
+.text-entry input { flex: 1; min-width: 0; font: inherit; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 9px; }
+.text-entry button { margin: 0; }
 .status { color: #52606d; }
 .turn { padding: 12px 0; border-top: 1px solid #e5e7eb; }
 .user { color: #1769e0; }
@@ -26,6 +30,10 @@ button.secondary { background: #e7edf5; color: #172033; }
       <button id="finish" class="secondary" disabled>暂停说话</button>
       <button id="stop" class="secondary" disabled>停止会话</button>
     </p>
+    <form id="text-form" class="text-entry">
+      <input id="text-input" type="text" placeholder="也可以输入：确认、取消、选择第二位…" autocomplete="off" disabled>
+      <button id="send-text" type="submit" disabled>发送</button>
+    </form>
     <div id="turns"></div>
   </section>
 </main>
@@ -52,6 +60,9 @@ const turnsEl = document.querySelector('#turns');
 const startButton = document.querySelector('#start');
 const finishButton = document.querySelector('#finish');
 const stopButton = document.querySelector('#stop');
+const textForm = document.querySelector('#text-form');
+const textInput = document.querySelector('#text-input');
+const sendTextButton = document.querySelector('#send-text');
 const levelEl = document.querySelector('#level');
 
 function addTurn(kind, text) {
@@ -267,6 +278,8 @@ async function cleanup() {
   startButton.disabled = false;
   finishButton.disabled = true;
   stopButton.disabled = true;
+  textInput.disabled = true;
+  sendTextButton.disabled = true;
 }
 
 async function requestVoiceAnswer() {
@@ -317,6 +330,9 @@ async function startVoice() {
   dataChannel.onopen = () => {
     statusEl.textContent = '已连接，请开始说话';
     finishButton.disabled = false;
+    textInput.disabled = false;
+    sendTextButton.disabled = false;
+    textInput.focus();
   };
   dataChannel.onclose = () => {
     if (peerConnection && peerConnection.connectionState !== 'closed') statusEl.textContent = '连接已关闭';
@@ -367,11 +383,25 @@ function interruptPlayback() {
   statusEl.textContent = '已打断 Agent，请开始说话';
 }
 
+function submitText(event) {
+  event.preventDefault();
+  const text = textInput.value.trim();
+  if (!text || dataChannel?.readyState !== 'open') return;
+  if (agentSpeaking) interruptPlayback();
+  setMicrophoneEnabled(false);
+  finishButton.disabled = true;
+  statusEl.textContent = '正在提交文字…';
+  sendControl('text_input', { text });
+  textInput.value = '';
+  textInput.focus();
+}
+
 startButton.onclick = () => startVoice().catch(async error => {
   await cleanup();
   statusEl.textContent = `错误：${error.message}`;
 });
 finishButton.onclick = finishSpeaking;
 stopButton.onclick = stopVoice;
+textForm.onsubmit = submitText;
 </script>
 </html>

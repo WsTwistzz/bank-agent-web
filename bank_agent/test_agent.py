@@ -99,6 +99,27 @@ class BankAgentTest(unittest.TestCase):
         self.assertEqual(result["response"], "余额为 5000.00 元。")
         self.assertEqual(result["specialist"], "account")
 
+    def test_greeting_uses_fixed_extensible_scene(self):
+        agent, _ = self.build([])
+
+        result = agent.chat("U1", "S1", "嗨！")
+
+        self.assertIn("我是 Bank Agent", result["response"])
+        self.assertIn("转账", result["response"])
+
+    def test_pending_action_takes_priority_over_greeting_scene(self):
+        agent, gateway = self.build([{
+            "content": "", "tool_calls": [{"id": "1", "name": "request_transfer", "arguments": {
+                "source_account_id": "A1", "target_account_id": "A2", "amount": "200.00"
+            }}],
+        }])
+        agent.chat("U1", "S1", "转账 200")
+
+        result = agent.chat("U1", "S1", "你好")
+
+        self.assertIn("等待确认", result["response"])
+        self.assertEqual(gateway.executions, 0)
+
     def test_yellow_transfer_waits_for_exact_confirmation(self):
         agent, gateway = self.build([{
             "content": "", "tool_calls": [{"id": "1", "name": "request_transfer", "arguments": {

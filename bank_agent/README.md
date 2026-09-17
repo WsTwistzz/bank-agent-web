@@ -178,8 +178,13 @@ uv run --extra voice python -m bank_agent.voice_server
 
 打开 `http://127.0.0.1:8090`，点击“开始语音”并允许麦克风权限。默认按 700ms 静音判定
 一轮结束；可通过 `VOICE_SILENCE_MS`、`VOICE_MIN_SPEECH_MS` 和
-`VOICE_RMS_THRESHOLD` 调整。该原型仅默认绑定 localhost，尚未包含公网 TURN、登录态绑定
+`VOICE_RMS_THRESHOLD` 调整。该原型仅默认绑定 localhost，尚未包含公网 TURN、登录态绑定。
 默认还会调用 SiliconFlow `/audio/speech`，把流式 PCM 通过 WebRTC DataChannel 发送给浏览器。
+连接后也可以在页面输入文字；文字和语音共用同一个会话、收款人候选上下文和待确认操作。
+
+简短对话场景集中定义在 `conversation_scenes.py` 的 `SCENES` 中。问候语会直接返回固定的
+Bank Agent 自我介绍；新增固定场景时追加 `ConversationScene` 即可。非银行请求仍交给 general
+Agent，但系统提示会要求它礼貌说明服务边界并引导回银行业务。
 浏览器支持自动语音打断，并用带 `turn_id` 的 interrupt 事件通知服务端停止当前音频流。
 ASR 仍是整段上传，并非流式识别，不应直接作为生产银行入口部署。
 

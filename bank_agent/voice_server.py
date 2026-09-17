@@ -155,6 +155,18 @@ def create_app(runtime=None, asr=None, tts=None):
                     if state["detector"]:
                         state["detector"].reset()
                     return
+                if event_type == "text_input":
+                    text = str(event.get("text") or "").strip()
+                    if not text:
+                        return
+                    state["tts_interrupted"] = True
+                    state["playback_active"] = False
+                    state["capturing"] = False
+                    if state["detector"]:
+                        state["detector"].reset()
+                    _event(channel, "capture", enabled=False)
+                    asyncio.create_task(process_text(text))
+                    return
                 if event_type != "end_utterance" or not state["capturing"]:
                     return
                 state["capturing"] = False
@@ -178,13 +190,35 @@ def create_app(runtime=None, asr=None, tts=None):
             channel = state["channel"]
             if not channel:
                 return
+            try:
+                _event(channel, "status", "正在识别…")
+                text = await asr.transcribe(pcm, audio_config.sample_rate)
+                if not text:
+                    _event(channel, "status", "没有识别到有效语音")
+                    return
+                await process_text(text)
+            except Exception as error:
+                _report_voice_error(channel, error)
+            finally:
+                if not state["playback_active"]:
+                    state["capturing"] = True
+                    _event(channel, "capture", enabled=True)
+
+        def _report_voice_error(channel, error):
+            current_runtime = runtime_holder["value"]
+            if current_runtime is not None:
+                current_runtime.logs.agent.write(
+                    "voice_error", user_id, session_id,
+                    error_type=type(error).__name__, error=str(error),
+                )
+            _event(channel, "error", str(error))
+
+        async def process_text(text):
+            channel = state["channel"]
+            if not channel:
+                return
             async with session_lock:
                 try:
-                    _event(channel, "status", "正在识别…")
-                    text = await asr.transcribe(pcm, audio_config.sample_rate)
-                    if not text:
-                        _event(channel, "status", "没有识别到有效语音")
-                        return
                     _event(channel, "transcript", text)
                     _event(channel, "status", "Bank Agent 正在处理…")
                     runtime = get_runtime()
@@ -247,13 +281,7 @@ def create_app(runtime=None, asr=None, tts=None):
                         state["tts_turn_id"] = None
                     _event(channel, "status", "请继续说话")
                 except Exception as error:
-                    current_runtime = runtime_holder["value"]
-                    if current_runtime is not None:
-                        current_runtime.logs.agent.write(
-                            "voice_error", user_id, session_id,
-                            error_type=type(error).__name__, error=str(error),
-                        )
-                    _event(channel, "error", str(error))
+                    _report_voice_error(channel, error)
                 finally:
                     state["capturing"] = not state["playback_active"]
                     if state["capturing"]:

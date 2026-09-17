@@ -8,6 +8,7 @@ from langgraph.types import Send
 
 from bank_agent.aggregator import ResultAggregator
 from bank_agent.autonomy import BudgetExceeded, ExecutionBudget
+from bank_agent.conversation_scenes import match_conversation_scene
 from bank_agent.dag_executor import ExecutionPolicy
 from bank_agent.specialist import SpecialistAgent, SpecialistResult, SpecialistTask
 from bank_agent.supervisor import SPECIALISTS, Supervisor
@@ -163,10 +164,16 @@ class BankAgent:
         session_id = state["session_id"]
         pending_result = self.banking_tools.get_pending_action(user_id, session_id)
         pending = pending_result["data"] if pending_result["success"] else None
+        raw_text = state["messages"][-1]["content"]
         if not pending:
+            scene = match_conversation_scene(raw_text)
+            if scene:
+                self._trace(
+                    "conversation_scene", user_id, session_id, scene=scene.name,
+                )
+                return {"response": scene.response}
             return {"response": ""}
 
-        raw_text = state["messages"][-1]["content"]
         text = normalize_action_reply(raw_text)
         self._trace(
             "pending_action_input", user_id, session_id,
