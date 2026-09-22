@@ -1,7 +1,10 @@
 import copy
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 
+from bank_agent.contracts import ToolExecutionContext
 from bank_agent.reference_resolver import (
     ReferenceResolutionError,
     resolve_arguments,
@@ -130,15 +133,31 @@ class DagExecutor:
             return {"success": False, "error": str(error), "attempts": 0}
         result = None
         for attempt in range(1, retries + 2):
+            tool_call_id = "CALL" + uuid.uuid4().hex.upper()
+            tool_metadata = self.registry.describe(node["tool"])
+            self._trace(
+                "tool_call_started", user_id, session_id,
+                specialist=specialist, graph=specialist, node_id=node["id"],
+                tool_call_id=tool_call_id, tool=node["tool"],
+                arguments=arguments, attempt=attempt, **tool_metadata,
+            )
+            started = time.monotonic()
             result = self.registry.call(
                 node["tool"], arguments, user_id, session_id,
-                request_id=request_id,
+                context=ToolExecutionContext(
+                    user_id=user_id, session_id=session_id,
+                    request_id=request_id, graph=specialist, node=node["id"],
+                    specialist=specialist,
+                ),
             )
             self._trace(
                 "tool_call", user_id, session_id,
-                specialist=specialist, node_id=node["id"],
+                specialist=specialist, graph=specialist, node_id=node["id"],
+                tool_call_id=tool_call_id,
                 tool=node["tool"], arguments=arguments,
                 attempt=attempt, result=result,
+                duration_ms=round((time.monotonic() - started) * 1000, 3),
+                **tool_metadata,
             )
             if result["success"]:
                 return {

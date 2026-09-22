@@ -162,6 +162,7 @@ class SpecialistAgent:
             allowed = set(self.registry.tools)
         else:
             allowed = set(allowed)
+        allowed &= self.registry.tools_for_specialist(self.name)
         if not allow_writes:
             allowed = {
                 name for name in allowed

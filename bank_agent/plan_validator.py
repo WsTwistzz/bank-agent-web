@@ -5,7 +5,10 @@ REF_PATTERN = re.compile(
     r"^(?P<node>[A-Za-z][A-Za-z0-9_-]{0,63})\.output"
     r"(?:\.[A-Za-z_][A-Za-z0-9_-]*|\.\d+|\[\d+\])*$"
 )
-RUNTIME_FIELDS = {"user_id", "session_id", "request_id", "idempotency_key"}
+RUNTIME_FIELDS = {
+    "user_id", "session_id", "request_id", "idempotency_key",
+    "graph", "node", "specialist", "tool_call_id",
+}
 
 
 class PlanValidationError(ValueError):

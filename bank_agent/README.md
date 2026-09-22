@@ -92,6 +92,25 @@ Supervisor 单独委派给对应专家；即使路由模型错误地返回多个
 - 写工具创建待确认 Action 后，节点和计划保持 `WAITING`，不会执行其后续节点
 - `$ref` 在工具调用前解析，支持对象字段、点号数组索引和方括号数组索引
 
+## Tool 分类与多 Agent 权限
+
+Agent/Graph 与 Tool、Action、Gateway、Bank API 团队之间的冻结接口见
+[`docs/agent_tool_protocol_v1.md`](../docs/agent_tool_protocol_v1.md)，对应 Python 类型的唯一事实源是
+`bank_agent/contracts.py`。
+
+每个 Agent-facing Tool 除了原有的 `access` 和 `user_scoped`，还声明：
+
+- `domain`：主要业务域，当前使用 `account`、`payment`、`risk`、`analysis`
+- `capability`：稳定的能力标识，例如 `account.balance.read`、`payment.transfer.prepare`
+- `tags`：供检索、Planner 和前端展示使用，不作为安全边界
+- `display_name`：前端展示名称；未单独配置时使用工具的中文描述
+- `allowed_specialists`：允许调用该工具的 Specialist/Graph 名称
+
+当前运行中的 `operations` 和 `investment` 名称继续兼容；工具策略也预先接受后续拆分后的
+`payment`、`risk`、`analysis` 名称。Specialist 生成计划前会按策略过滤可见工具，执行时
+`ToolRegistry` 会再次校验可信运行时传入的 specialist。`graph`、`node`、`specialist`、
+`request_id` 都由执行器注入，不能出现在模型生成的参数里。
+
 节点会记录 `status`、`attempts`、`resolved_arguments`、`output` 或 `error`。全部节点完成后，
 专业模型只接收执行结果并在无工具权限的上下文中总结。若模型仍返回 Tool Call，运行时会拒绝
 并记录 `unplanned_tool_calls_rejected` 审计事件。
@@ -125,6 +144,18 @@ CLI 将审计记录按用途追加到 `bank_agent/logs/` 下的三份 JSONL 文�
 - `agent_operations.jsonl`：用户输入、模型可见上下文与输出、显式计划、路由摘要、Tool Call 和最终回复
 - `user_authorizations.jsonl`：用户确认、拒绝、强认证发起、成功与失败结果
 - `risk_and_api.jsonl`：风控输入/等级/处置结果、Action 执行结果、Bank Gateway HTTP 方法、路径、状态码与耗时
+
+另外生成 `frontend_events.jsonl`，它不是审计事实源，而是供前端直接消费的精简事件流。每行包含
+`event_id`、`timestamp`、`sequence`、`type`、`user_id`、`session_id`、`turn_id`，以及对应的消息、
+工具或决策摘要字段。`type` 当前包括 `message`、`tool`、`reasoning` 和 `error`。同一轮事件可按
+`turn_id` 分组、按 `sequence` 排序；工具事件包含工具名、脱敏参数、精简结果和运行状态。
+
+`reasoning` 只保存 Supervisor 路由理由、显式计划摘要、结果充分性判断和重规划摘要，不保存模型
+隐藏思维链。原始审计日志继续保留完整排障信息，前端不应直接暴露或下载原始日志。
+
+工具执行会分别产生 `running` 和 `completed`/`failed` 事件。两条事件使用同一个
+`tool_call_id` 关联，并包含 `domain`、`capability`、`access`、`tags`、`graph`、`node_id`、
+调用次数和耗时；参数与结果继续执行脱敏和长度限制。
 
 每行是一条带 UTC 时间、用户和会话标识的 JSON 事件。Bank Gateway 自身无法确定调用者时，接口事件的用户和会话标识为 `null`，可与同一时段的 Tool/Action 事件关联。内容包括：
 

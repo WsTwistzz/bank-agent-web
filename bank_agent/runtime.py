@@ -60,7 +60,7 @@ def create_runtime(otp_sender=None):
     connection = sqlite3.connect(ROOT / "checkpoints.db", check_same_thread=False)
     agent = BankAgent(
         models["general"], registry, banking_tools, SqliteSaver(connection),
-        max_steps=agent_config.max_steps, trace=logs.agent,
+        max_steps=agent_config.max_steps, trace=logs.agent_with_frontend,
         mode=agent_config.mode, models=models,
         max_plan_nodes=agent_config.max_plan_nodes,
         max_rounds=agent_config.max_rounds,

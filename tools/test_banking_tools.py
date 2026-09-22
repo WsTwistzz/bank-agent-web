@@ -9,6 +9,7 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT))
 
 from actions import OTPVerifier
+from bank_agent.contracts import ToolExecutionContext
 from bank_gateway import BankGateway
 from mock_bank.app import Bank, Handler
 from tools import BankingTools, create_bank_action_service, create_banking_tool_registry
@@ -147,13 +148,44 @@ class BankingToolsTest(unittest.TestCase):
         self.assertFalse(invalid["success"])
         self.assertIn("unknown fields", invalid["error"])
 
+        canonical = self.registry.call(
+            "get_balance", {"account_id": "A1001"},
+            context=ToolExecutionContext(
+                user_id="U1", session_id="S1", request_id="REQ-CONTEXT",
+                graph="payment", node="validate_funds", specialist="payment",
+            ),
+        )
+        self.assertEqual("1000.00", canonical["data"]["balance"])
+
     def test_registry_exposes_explicit_access_metadata(self):
         metadata = {item["name"]: item for item in self.registry.metadata()}
         self.assertEqual("read", metadata["get_balance"]["access"])
         self.assertEqual("write", metadata["request_transfer"]["access"])
         self.assertFalse(metadata["get_investment_products"]["user_scoped"])
+        self.assertEqual("account", metadata["get_balance"]["domain"])
+        self.assertEqual("account.balance.read", metadata["get_balance"]["capability"])
+        self.assertIn("payment", metadata["get_balance"]["allowed_specialists"])
+        self.assertIn("shared", metadata["get_balance"]["tags"])
         self.assertTrue(self.registry.is_write("request_transfer"))
         self.assertFalse(self.registry.is_write("get_balance"))
+
+    def test_registry_enforces_specialist_policy_at_execution_time(self):
+        denied = self.registry.call(
+            "request_transfer",
+            {
+                "source_account_id": "A1001", "target_account_id": "A1002",
+                "amount": "10.00",
+            },
+            "U1", "S1", request_id="REQ-POLICY", graph="account",
+            node="unexpected_write", specialist="account",
+        )
+        self.assertFalse(denied["success"])
+        self.assertIn("not allowed for specialist", denied["error"])
+
+        visible = self.registry.tools_for_specialist("payment")
+        self.assertIn("get_balance", visible)
+        self.assertIn("request_transfer", visible)
+        self.assertNotIn("request_purchase_investment", visible)
 
     def test_registry_rejects_boolean_as_integer(self):
         result = self.registry.call(
