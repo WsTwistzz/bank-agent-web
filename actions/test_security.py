@@ -68,7 +68,9 @@ class ActionServiceTest(unittest.TestCase):
             self.service.confirm(action["action_id"], "U1")
         events = [
             json.loads(line)["event"]
-            for line in (Path(self.temp_dir.name) / "authorization.jsonl").read_text().splitlines()
+            for line in (Path(self.temp_dir.name) / "authorization.jsonl").read_text(
+                encoding="utf-8"
+            ).splitlines()
         ]
         self.assertEqual(["user_confirmed"], events)
 
@@ -116,7 +118,9 @@ class ActionServiceTest(unittest.TestCase):
         self.assertEqual("RED", large["risk_level"])
         decisions = [
             json.loads(line)["details"]["risk_level"]
-            for line in (Path(self.temp_dir.name) / "risk.jsonl").read_text().splitlines()
+            for line in (Path(self.temp_dir.name) / "risk.jsonl").read_text(
+                encoding="utf-8"
+            ).splitlines()
             if json.loads(line)["event"] == "risk_decision"
         ]
         self.assertEqual(["YELLOW", "RED"], decisions)

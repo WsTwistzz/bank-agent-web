@@ -39,7 +39,7 @@ class BankGatewayTest(unittest.TestCase):
             f"http://{host}:{port}", audit_log=TraceLogger(log_path)
         )
         gateway.get_balance("A1001")
-        record = json.loads(log_path.read_text())
+        record = json.loads(log_path.read_text(encoding="utf-8"))
         self.assertEqual("bank_api_call", record["event"])
         self.assertEqual("GET", record["details"]["method"])
         self.assertEqual("/accounts/A1001", record["details"]["path"])

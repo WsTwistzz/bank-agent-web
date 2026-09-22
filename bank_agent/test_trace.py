@@ -16,7 +16,7 @@ class TraceLoggerTest(unittest.TestCase):
                 credential="123456", context={"content": "验证码是 123456"},
                 arguments={"amount": "20.00"},
             )
-            record = json.loads(path.read_text())
+            record = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual("[REDACTED]", record["details"]["credential"])
         self.assertEqual("验证码是 [REDACTED_OTP]", record["details"]["context"]["content"])
         self.assertEqual("20.00", record["details"]["arguments"]["amount"])
@@ -28,9 +28,12 @@ class TraceLoggerTest(unittest.TestCase):
             logs.authorization.write("user_confirmed", "U1", "S1", otp="123456")
             logs.risk_api.write("risk_decision", "U1", "S1", api_token="secret")
 
-            self.assertEqual("model_response", json.loads(logs.agent.path.read_text())["event"])
-            authorization = json.loads(logs.authorization.path.read_text())
-            risk = json.loads(logs.risk_api.path.read_text())
+            self.assertEqual(
+                "model_response",
+                json.loads(logs.agent.path.read_text(encoding="utf-8"))["event"],
+            )
+            authorization = json.loads(logs.authorization.path.read_text(encoding="utf-8"))
+            risk = json.loads(logs.risk_api.path.read_text(encoding="utf-8"))
 
         self.assertEqual("[REDACTED]", authorization["details"]["otp"])
         self.assertEqual("[REDACTED]", risk["details"]["api_token"])
@@ -56,7 +59,10 @@ class TraceLoggerTest(unittest.TestCase):
                 "agent_response", "U1", "S1", response="余额为 20 元",
                 specialist="account", specialists=["account"],
             )
-            records = [json.loads(line) for line in log.path.read_text().splitlines()]
+            records = [
+                json.loads(line)
+                for line in log.path.read_text(encoding="utf-8").splitlines()
+            ]
 
         self.assertEqual(["message", "reasoning", "tool", "message"], [r["type"] for r in records])
         self.assertEqual([1, 2, 3, 4], [r["sequence"] for r in records])
@@ -80,7 +86,10 @@ class TraceLoggerTest(unittest.TestCase):
                 "tool_call", "U1", "S1", **common, duration_ms=12.5,
                 result={"success": True, "data": {"balance": "20.00"}},
             )
-            records = [json.loads(line) for line in log.path.read_text().splitlines()]
+            records = [
+                json.loads(line)
+                for line in log.path.read_text(encoding="utf-8").splitlines()
+            ]
 
         self.assertEqual(["running", "completed"], [item["status"] for item in records])
         self.assertEqual({"CALL1"}, {item["tool_call_id"] for item in records})
@@ -93,8 +102,8 @@ class TraceLoggerTest(unittest.TestCase):
             logs = AuditLogs(directory)
             logs.agent_with_frontend.write("user_received", "U1", "S1", message="你好")
 
-            audit = json.loads(logs.agent.path.read_text())
-            frontend = json.loads(logs.frontend.path.read_text())
+            audit = json.loads(logs.agent.path.read_text(encoding="utf-8"))
+            frontend = json.loads(logs.frontend.path.read_text(encoding="utf-8"))
 
         self.assertEqual("user_received", audit["event"])
         self.assertEqual("message", frontend["type"])
