@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* 暗夜金融基底 */
+  --color-ink-950: #06070c;
+  --color-ink-900: #0a0c14;
+  --color-ink-800: #11141f;
+  --color-ink-700: #1a1e2e;
+  --color-ink-600: #252b40;
+
+  /* 主品牌：青金极光 */
+  --color-aurora-300: #7ef9e1;
+  --color-aurora-400: #4deecb;
+  --color-aurora-500: #22d3a8;
+  --color-gold-300: #ffe2a8;
+  --color-gold-400: #ffd07b;
+  --color-gold-500: #f0b04e;
+
+  /* 权限三色语义 */
+  --color-safe-400: #34d399;
+  --color-safe-500: #10b981;
+  --color-warn-400: #fbbf24;
+  --color-warn-500: #f59e0b;
+  --color-risk-400: #fb7185;
+  --color-risk-500: #f43f5e;
+
+  --animate-shimmer: shimmer 2.5s linear infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes pulse-ring {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-ink-950);
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* 极光背景氛围 */
+.aurora-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 45% at 15% -5%, rgba(34, 211, 168, 0.10), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 90% 10%, rgba(240, 176, 78, 0.07), transparent 60%),
+    radial-gradient(ellipse 70% 55% at 50% 110%, rgba(99, 102, 241, 0.09), transparent 65%);
+}
+
+/* 极光网格线 */
+.aurora-grid {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 30%, transparent 75%);
+}
+
+/* 玻璃拟态面板 */
+.glass {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.55);
+}
+
+/* 极光渐变文字 */
+.text-aurora {
+  background: linear-gradient(115deg, var(--color-aurora-300), var(--color-gold-400), var(--color-aurora-400));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: var(--animate-shimmer);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.4); }
+
+/* 打字光标 */
+.type-cursor::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -0.15em;
+  background: var(--color-aurora-400);
+  animation: var(--animate-pulse-ring);
+}
