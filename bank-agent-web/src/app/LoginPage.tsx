@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole, ShieldCheck, Smartphone } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import Brand from "./Brand";
+import { asset } from "./asset";
 import "./entry.css";
 
 export default function LoginPage({ register = false }: { register?: boolean }) {
@@ -32,7 +33,7 @@ export default function LoginPage({ register = false }: { register?: boolean }) 
       </header>
 
       <div className="login-body">
-        <div className="login-app-icon"><img src="/banksense-icon.png" alt="BankSense App 图标" /></div>
+        <div className="login-app-icon"><img src={asset("banksense-icon.png")} alt="BankSense App 图标" /></div>
         <span className="login-eyebrow">YOUR MONEY. MORE SENSE.</span>
         <h1>{register ? <>A fresh start.<br />A smarter you.</> : <>Welcome back.<br />Good to see you.</>}</h1>
         <p className="login-intro">{register ? "从这里开启你的智慧金融生活。" : "让每一笔财富，都更有方向。"}</p>
