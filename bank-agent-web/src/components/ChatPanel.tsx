@@ -153,7 +153,7 @@ export function ChatPanel({ messages, busy, pending, onSend }: Props) {
           </div>
           <div>
             <h1 className="text-sm font-semibold text-slate-100">
-              Aurora <span className="text-aurora font-normal">AI</span>
+              BankSense <span className="text-aurora font-normal">AI</span>
             </h1>
             <p className="text-[11px] text-slate-500">在线 · LangGraph 编排 · 决策全链路审计</p>
           </div>
@@ -193,7 +193,7 @@ export function ChatPanel({ messages, busy, pending, onSend }: Props) {
                   />
                 ))}
               </span>
-              Aurora 正在思考…
+              BankSense 正在思考…
             </motion.div>
           )}
         </div>

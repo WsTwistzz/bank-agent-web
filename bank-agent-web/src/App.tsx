@@ -5,6 +5,8 @@ import { ChatPanel } from "./components/ChatPanel";
 import { PendingActionModal } from "./components/PendingActionModal";
 import { Sidebar } from "./components/Sidebar";
 import { useAgentEngine } from "./useAgentEngine";
+import { FeatureDataProvider } from "./app/features/FeatureDataProvider";
+import { PaymentProvider } from "./app/features/PaymentProvider";
 
 export default function App() {
   const { messages, pending, busy, send, confirmPending, cancelPending } =
@@ -45,5 +47,5 @@ export default function App() {
   }
 
   // 默认：浅色资金管理 App（仿参考视频）
-  return <BankApp />;
+  return <FeatureDataProvider><PaymentProvider><BankApp route={hash} /></PaymentProvider></FeatureDataProvider>;
 }

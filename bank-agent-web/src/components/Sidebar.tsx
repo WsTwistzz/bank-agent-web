@@ -24,7 +24,7 @@ function CreditCardVisual() {
       <div className="relative flex h-full flex-col justify-between">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold tracking-[0.2em] text-slate-400">
-            AURORA BANK
+            BankSense
           </span>
           <span className="flex h-7 w-9 items-center justify-center rounded-md border border-gold-400/30 bg-gradient-to-br from-gold-400/30 to-gold-500/10">
             <span className="h-3 w-5 rounded-sm border border-gold-400/50" />
@@ -64,7 +64,7 @@ export function Sidebar() {
           A
         </span>
         <div>
-          <p className="text-sm font-semibold tracking-wide text-slate-100">Aurora Bank</p>
+          <p className="text-sm font-semibold tracking-wide text-slate-100">BankSense</p>
           <p className="text-[10px] tracking-widest text-slate-600">AI BANKING AGENT</p>
         </div>
         <Bell size={15} className="ml-auto text-slate-500 transition hover:text-slate-300" />

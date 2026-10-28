@@ -1,0 +1,47 @@
+.banksense-nav-dock {
+  position: relative;
+  z-index: 30;
+  flex-shrink: 0;
+  padding: 9px 18px 11px;
+}
+.banksense-capsule-nav {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 59px;
+  padding: 6px;
+  border: 1px solid rgba(255,255,255,.94);
+  border-radius: 999px;
+  background: rgba(255,255,255,.72);
+  backdrop-filter: blur(30px) saturate(1.45);
+  -webkit-backdrop-filter: blur(30px) saturate(1.45);
+  box-shadow: 0 6px 24px rgba(31,50,70,.055), inset 0 1px 2px rgba(255,255,255,.95);
+}
+.banksense-nav-item {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 9px;
+  background: transparent;
+  color: #a3aab5;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.banksense-nav-item.is-active { color: #245372; }
+.banksense-nav-item-content { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.banksense-nav-selection { position: absolute; inset: 0; border-radius: 999px; background: #e9f2f8; box-shadow: inset 0 1px 1px rgba(255,255,255,.9); }
+.banksense-nav-label { font-size: 10px; font-weight: 650; white-space: nowrap; }
+.banksense-nav-agent { opacity: .6; filter: grayscale(.5); transition: opacity .2s, filter .2s; }
+.banksense-nav-item.is-active .banksense-nav-agent { opacity: 1; filter: none; }
+.banksense-nav-item:hover { color: #245372; }
+.banksense-nav-item:focus-visible { outline: 2px solid #75a4bb; outline-offset: 2px; }
+.banksense-home-indicator { height: 3px; width: 97px; margin: 13px auto 0; border-radius: 999px; background: #182534; opacity: .85; }
+@media (max-width: 500px) { .banksense-nav-dock { padding-bottom: max(10px,env(safe-area-inset-bottom)); } }
+@media (prefers-reduced-motion: reduce) { .banksense-nav-agent { transition: none; } }

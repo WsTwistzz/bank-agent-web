@@ -292,7 +292,7 @@ export function useAgentEngine() {
     void (async () => {
       await sleep(400);
       await pushText(
-        "你好，我是 **Aurora**，你的 AI 银行智能体。我可以在严格的安全框架内帮你办理查询、转账、账单分析和理财业务。点击下方快捷指令，体验绿 / 黄 / 红三级权限的完整流程。",
+        "你好，我是 **BankSense**，你的 AI 银行智能体。我可以在严格的安全框架内帮你办理查询、转账、账单分析和理财业务。点击下方快捷指令，体验绿 / 黄 / 红三级权限的完整流程。",
         { stream: true },
       );
     })();

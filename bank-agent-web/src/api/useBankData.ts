@@ -15,6 +15,8 @@ import {
   type Payee,
   type Transaction,
 } from "./bank";
+import { DEMO_MODE } from "./demoMode";
+import { demoSnapshot } from "./demoData";
 
 export interface BankSnapshot {
   account: Account;
@@ -51,6 +53,14 @@ export function useBankData() {
     let cancelled = false;
 
     (async () => {
+      // 静态部署（GitHub Pages）：没有后端，直接使用打包进来的演示快照。
+      if (DEMO_MODE) {
+        setSnapshot(demoSnapshot);
+        setSource("fallback");
+        setError(null);
+        return;
+      }
+
       try {
         const [accounts, transactions, cards, payees, debits, products] = await Promise.all([
           getAccounts(),

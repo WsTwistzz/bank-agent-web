@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Mic, SendHorizonal, Sparkles, Square, WifiOff } from "lucide-react";
+import { Mic, SendHorizonal, Square, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DEMO } from "../api/bank";
 import {
@@ -18,6 +18,7 @@ import {
   type RiskLevel,
 } from "./PermissionCard";
 import { glass, Pressable, T } from "./theme";
+import AgentIcon from "./AgentIcon";
 
 type TraceItem = { id: string; kind: "reasoning" | "tool"; text: string; state?: string };
 
@@ -372,7 +373,7 @@ export default function AgentPage() {
           </p>
         </div>
         <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: T.tealSoft }}>
-          <Sparkles size={16} style={{ color: T.teal }} />
+          <AgentIcon size={29} />
         </span>
       </div>
 

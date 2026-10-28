@@ -1,0 +1,14 @@
+{
+  "name": "BankSense",
+  "short_name": "BankSense",
+  "description": "感知财富，安心每一步",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#eee8f5",
+  "theme_color": "#eee8f5",
+  "icons": [
+    { "src": "banksense-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "banksense-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

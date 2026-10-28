@@ -11,6 +11,10 @@ import {
   Wallet,
   ArrowRightLeft,
   WifiOff,
+  TrendingUp,
+  Repeat2,
+  ChartNoAxesCombined,
+  CreditCard,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -101,7 +105,7 @@ export default function HomePage() {
   const [insightOpen, setInsightOpen] = useState(false);
   const { snapshot, source, error } = useBankData();
 
-  const { account, transactions, payees, debits, products } = snapshot;
+  const { account, transactions, debits, products } = snapshot;
 
   const series = useMemo(() => monthlySeries(transactions), [transactions]);
   const income = useMemo(() => incomeThisMonth(transactions), [transactions]);
@@ -146,8 +150,8 @@ export default function HomePage() {
         >
           {account.name.slice(0, 1).toUpperCase()}
         </span>
-        <span className="text-[15px] font-black tracking-[0.18em]" style={{ color: T.ink }}>
-          AURORA
+        <span className="text-[17px] font-bold tracking-[-0.04em]" style={{ color: T.ink }}>
+          BankSense
         </span>
         <span className="relative flex h-9 w-9 items-center justify-center rounded-full" style={glass.pill}>
           {source === "fallback" ? (
@@ -218,12 +222,13 @@ export default function HomePage() {
       {/* 三按钮 —— 参考图：深色实心 + 玻璃描边 */}
       <motion.div variants={cardIn} custom={2} initial="hidden" animate="show" className="mt-6 flex gap-2.5">
         {[
-          { icon: Plus, label: "充值", primary: true },
-          { icon: Send, label: "转账", primary: false },
-          { icon: Wallet, label: "收款", primary: false },
+          { icon: Plus, label: "充值", primary: true, path: null },
+          { icon: Send, label: "转账", primary: false, path: "/transfer" },
+          { icon: Wallet, label: "收款", primary: false, path: "/receive" },
         ].map((btn) => (
           <Pressable
             key={btn.label}
+            onClick={() => { if (btn.path) window.location.hash = btn.path; }}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-full py-3 text-[12.5px] font-semibold"
             style={
               btn.primary
@@ -250,7 +255,7 @@ export default function HomePage() {
           custom={3}
           initial="hidden"
           animate="show"
-          className="flex-1 rounded-[22px] p-4"
+          className="min-w-0 flex-1 rounded-[22px] p-4"
           style={{ ...glass.card, borderRadius: 22 }}
         >
           <p className="text-[11px] font-medium" style={{ color: T.sub }}>Total Income</p>
@@ -265,50 +270,35 @@ export default function HomePage() {
           </div>
         </motion.div>
 
-        {/* Quick actions —— 来自后端收款人 */}
+        {/* 四个业务入口，沿用圆形玻璃按钮与按压回弹 */}
         <motion.div
           variants={cardIn}
           custom={4}
           initial="hidden"
           animate="show"
-          className="flex-1 rounded-[22px] p-4"
+          className="min-w-0 flex-1 rounded-[22px] p-4"
           style={{ ...glass.card, borderRadius: 22 }}
         >
           <p className="text-[11px] font-medium" style={{ color: T.sub }}>Quick actions</p>
-          <div className="mt-3 grid grid-cols-3 gap-2.5">
-            {payees.map((p, i) => (
-              <motion.div
-                key={p.id}
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.6 + i * 0.06, type: "spring", stiffness: 400, damping: 20 }}
-                className="flex flex-col items-center gap-1"
-              >
-                <span
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                  style={{ background: "#475467", boxShadow: "0 2px 8px rgba(16,24,40,0.15)" }}
-                >
-                  {(p.alias || p.name).slice(0, 1)}
+          <div className="mt-3 grid grid-cols-2 gap-x-2 gap-y-3">
+            {[
+              { label: "理财", icon: TrendingUp, path: "wealth", color: "#1a7f9e", bg: "rgba(26,127,158,.08)" },
+              { label: "订阅", icon: Repeat2, path: "subscriptions", color: "#8d6caa", bg: "rgba(141,108,170,.08)" },
+              { label: "账单分析", icon: ChartNoAxesCombined, path: "bills", color: "#b58c58", bg: "rgba(181,140,88,.08)" },
+              { label: "银行卡管理", icon: CreditCard, path: "cards", color: "#638b86", bg: "rgba(99,139,134,.1)" },
+            ].map((action, i) => (
+              <motion.a key={action.path} href={`#/${action.path}`} aria-label={action.label}
+                initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: .35 + i * .05 }} whileTap={{ scale: .91 }}
+                className="group flex flex-col items-center gap-1.5 rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#1a7f9e]"
+                style={{ textDecoration: "none" }}>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full transition-transform group-hover:-translate-y-0.5"
+                  style={{ background: action.bg, border: "1px solid rgba(255,255,255,.85)", boxShadow: "0 3px 10px rgba(16,24,40,.04), inset 0 1px 2px rgba(255,255,255,.8)", color: action.color }}>
+                  <action.icon size={17} strokeWidth={1.7} />
                 </span>
-                <span className="max-w-full truncate text-[8.5px]" style={{ color: T.sub }}>
-                  {p.alias || p.name}
-                </span>
-              </motion.div>
+                <span className="whitespace-nowrap text-[8px] font-medium" style={{ color: T.sub }}>{action.label}</span>
+              </motion.a>
             ))}
-            <motion.div
-              initial={{ opacity: 0, scale: 0 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.9, type: "spring", stiffness: 400, damping: 20 }}
-              className="flex flex-col items-center gap-1"
-            >
-              <Pressable
-                className="flex h-9 w-9 items-center justify-center rounded-full"
-                style={{ background: T.tealSoft, border: `1px dashed ${T.teal}` }}
-              >
-                <Plus size={14} style={{ color: T.teal }} />
-              </Pressable>
-              <span className="text-[8.5px]" style={{ color: T.teal }}>Add New</span>
-            </motion.div>
           </div>
         </motion.div>
       </div>

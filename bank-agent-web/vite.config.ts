@@ -8,6 +8,9 @@ const AGENT_URL = process.env.AGENT_BRIDGE_URL ?? 'http://127.0.0.1:8099'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // GitHub Pages 部署在 https://<user>.github.io/bank-agent/ 子路径下，
+  // 构建时用 VITE_BASE=/bank-agent/ 覆盖；本地开发保持根路径。
+  base: process.env.VITE_BASE ?? '/',
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {

@@ -67,7 +67,7 @@ function VaultHome() {
       <div className="flex items-center justify-between px-6 pt-3">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.3em] text-white/40">
-            Aurora Vault
+            BankSense Vault
           </p>
           <p className="mt-0.5 text-[15px] font-medium text-white">晚安，Alice</p>
         </div>
@@ -138,7 +138,7 @@ function VaultHome() {
                 <p className="text-[12px] font-medium tracking-[0.15em] text-white/90">ALICE</p>
               </div>
               <p className="text-[10px] tracking-[0.2em]" style={{ color: GOLD_BRIGHT }}>
-                AURORA
+                BankSense
               </p>
             </div>
           </div>
@@ -222,7 +222,7 @@ function VaultAI() {
           <Sparkles size={17} className="text-black" />
         </span>
         <div>
-          <p className="text-[14px] font-medium text-white">Aurora AI</p>
+          <p className="text-[14px] font-medium text-white">BankSense AI</p>
           <p className="text-[10px] uppercase tracking-[0.25em] text-white/35">Private Banker</p>
         </div>
         <span className="ml-auto flex items-center gap-1.5 text-[10px] text-white/40">

@@ -1,10 +1,16 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Home, Sparkles, User } from "lucide-react";
-import { useState } from "react";
 import AgentPage from "./AgentPage";
 import HomePage from "./HomePage";
 import ProfilePage from "./ProfilePage";
-import { glass } from "./theme";
+import WelcomePage from "./WelcomePage";
+import LoginPage from "./LoginPage";
+import WealthPage from "./features/WealthPage";
+import SubscriptionsPage from "./features/SubscriptionsPage";
+import BillsPage from "./features/BillsPage";
+import CardsPage from "./features/CardsPage";
+import TransferPage from "./features/TransferPage";
+import ReceivePage from "./features/ReceivePage";
+import CapsuleNav from "./CapsuleNav";
 
 function StatusBar() {
   return (
@@ -27,21 +33,17 @@ function StatusBar() {
   );
 }
 
-const TABS = [
-  { key: "home", icon: Home, label: "首页" },
-  { key: "agent", icon: Sparkles, label: "Agent" },
-  { key: "me", icon: User, label: "我的" },
-] as const;
+type TabKey = "home" | "agent" | "me";
 
-type TabKey = (typeof TABS)[number]["key"];
-
-export default function BankApp() {
-  const [tab, setTab] = useState<TabKey>("home");
+export default function BankApp({ route = "" }: { route?: string }) {
+  const tab: TabKey = route === "#/agent" ? "agent" : route === "#/profile" ? "me" : "home";
+  const featureRoute = ["#/wealth", "#/subscriptions", "#/bills", "#/cards", "#/transfer", "#/receive"].includes(route);
+  const entryMode = !featureRoute && !["#/home", "#/agent", "#/profile"].includes(route);
 
   return (
     <div
-      className="relative flex h-full items-center justify-center overflow-clip"
-      style={{ background: "linear-gradient(145deg,#e2e8f0 0%,#d4dde6 50%,#c8d4de 100%)" }}
+      className="banksense-stage relative flex h-full items-center justify-center overflow-clip"
+      style={{ background: entryMode ? "#eeebff" : "linear-gradient(145deg,#e2e8f0 0%,#d4dde6 50%,#c8d4de 100%)" }}
     >
       {/* 背景光晕装饰 */}
       <div
@@ -59,18 +61,20 @@ export default function BankApp() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: "spring", stiffness: 200, damping: 26 }}
         id="phone-frame"
-        className="relative overflow-clip rounded-[48px]"
+        className="banksense-frame relative overflow-clip rounded-[48px]"
         style={{
           height: "min(844px, 94vh)",
           width: "min(390px, 94vw)",
-          background: "linear-gradient(155deg,#f7f5f3 0%,#efedea 35%,#e9e7e4 100%)",
+          background: entryMode
+            ? "radial-gradient(ellipse at 92% 22%,#fbe8c9 0%,transparent 44%), radial-gradient(ellipse at 4% 46%,#ddd4ff 0%,transparent 55%), linear-gradient(160deg,#f6f5f1 5%,#eee7f5 95%)"
+            : "linear-gradient(155deg,#f7f5f3 0%,#efedea 35%,#e9e7e4 100%)",
           boxShadow:
-            "0 40px 90px -20px rgba(16,24,40,0.35), inset 0 0 0 2px rgba(255,255,255,0.6)",
+            entryMode ? "0 14px 35px rgba(64,47,93,.1), inset 0 0 0 1px rgba(255,255,255,.5)" : "0 40px 90px -20px rgba(16,24,40,0.35), inset 0 0 0 2px rgba(255,255,255,0.6)",
           border: "1px solid rgba(255,255,255,0.4)",
         }}
       >
         {/* ===== 柔光氛围层：斜向光束 + 暖雾 ===== */}
-        <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-none absolute inset-0" style={{ opacity: entryMode ? 0 : 1 }}>
           {/* 主光束：左上斜照进来的宽幅柔光 */}
           <div
             className="absolute -left-[40%] -top-[25%] h-[75%] w-[160%]"
@@ -125,59 +129,37 @@ export default function BankApp() {
 
           <AnimatePresence mode="wait">
             <motion.div
-              key={tab}
+              key={entryMode || featureRoute ? route : tab}
               initial={{ opacity: 0, x: 24 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -24 }}
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
               className="relative flex min-h-0 flex-1 flex-col"
             >
-              {tab === "home" && <HomePage />}
-              {tab === "agent" && <AgentPage />}
-              {tab === "me" && <ProfilePage />}
+              {entryMode ? (
+                route === "#/login" || route === "#/register"
+                  ? <LoginPage key={route} register={route === "#/register"} />
+                  : <WelcomePage />
+              ) : featureRoute ? (
+                <>
+                  {route === "#/wealth" && <WealthPage />}
+                  {route === "#/subscriptions" && <SubscriptionsPage />}
+                  {route === "#/bills" && <BillsPage />}
+                  {route === "#/cards" && <CardsPage />}
+                  {route === "#/transfer" && <TransferPage />}
+                  {route === "#/receive" && <ReceivePage />}
+                </>
+              ) : (
+                <>
+                  {tab === "home" && <HomePage />}
+                  {tab === "agent" && <AgentPage />}
+                  {tab === "me" && <ProfilePage />}
+                </>
+              )}
             </motion.div>
           </AnimatePresence>
 
-          {/* Tab Bar（玻璃底栏） */}
-          <div className="relative z-30 flex items-center justify-around px-8 pb-6 pt-2.5" style={glass.nav}>
-            {TABS.map((t) => {
-              const active = tab === t.key;
-              return (
-                <motion.button
-                  key={t.key}
-                  whileTap={{ scale: 0.88 }}
-                  onClick={() => setTab(t.key)}
-                  className="relative flex flex-col items-center gap-1 px-3 py-1"
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="tab-pill"
-                      transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                      className="absolute -inset-x-1 inset-y-0 rounded-full"
-                      style={{ background: "rgba(20,52,79,0.06)" }}
-                    />
-                  )}
-                  <motion.span
-                    className="relative z-10"
-                    animate={{ scale: active ? 1.12 : 1, y: active ? -1 : 0 }}
-                    transition={{ type: "spring", stiffness: 420, damping: 26 }}
-                  >
-                    <t.icon
-                      size={20}
-                      strokeWidth={active ? 2.2 : 1.5}
-                      style={{ color: active ? "#14344f" : "#98a2b3" }}
-                    />
-                  </motion.span>
-                  <span
-                    className="relative z-10 text-[9.5px] font-semibold"
-                    style={{ color: active ? "#14344f" : "#98a2b3" }}
-                  >
-                    {t.label}
-                  </span>
-                </motion.button>
-              );
-            })}
-          </div>
+          {!entryMode && <CapsuleNav active={featureRoute ? "home" : tab} />}
         </div>
       </motion.div>
     </div>

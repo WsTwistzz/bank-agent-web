@@ -7,6 +7,8 @@
  * 接口契约以后端 bank_gateway / mock_bank/app.py 的路由为准。
  */
 
+import { DEMO_MODE } from "./demoMode";
+
 const BASE = "/api/bank";
 
 /** 演示用户与主账户（后端 bank.db 种子数据） */
@@ -102,6 +104,9 @@ export class BankApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (DEMO_MODE) {
+    throw new BankApiError("静态演示版本：该操作需要连接本地后端", 0);
+  }
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
